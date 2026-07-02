@@ -1,4 +1,8 @@
 import { useQueryClient } from "@tanstack/react-query";
+import {
+  useAirdropIsSignatureValid,
+  useAirdropToken,
+} from "@tokenops/sdk/fhe-airdrop/react";
 import { useUserDecrypt } from "@zama-fhe/react-sdk";
 import {
   ArrowUpRight,
@@ -13,7 +17,8 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { formatUnits, parseAbi } from "viem";
-import { useAccount, useReadContract } from "wagmi";
+import { useAccount, usePublicClient, useReadContract } from "wagmi";
+import { sepolia } from "wagmi/chains";
 import { Button } from "../components/ui/button";
 import { PrivacyBadge } from "../components/ui/privacy-badge";
 import { claimsQueryKey, useClaims } from "../hooks/use-claims";
@@ -112,6 +117,7 @@ function ClaimCard({
   recipient: `0x${string}`;
 }) {
   const queryClient = useQueryClient();
+  const publicClient = usePublicClient({ chainId: sepolia.id });
   const privateClaim = usePrivateClaim({
     airdropAddress: claim.airdropAddress,
     encryptedInput: claim.encryptedInput,
@@ -119,10 +125,18 @@ function ClaimCard({
   });
   const [successHash, setSuccessHash] = useState<`0x${string}`>();
   const [actionError, setActionError] = useState<string>();
+  const [confirmingClaim, setConfirmingClaim] = useState(false);
   const decimals = useReadContract({
     address: claim.tokenAddress,
     abi: decimalsAbi,
     functionName: "decimals",
+  });
+  const airdropToken = useAirdropToken({ address: claim.airdropAddress });
+  const authorization = useAirdropIsSignatureValid({
+    address: claim.airdropAddress,
+    encryptedAmountHandle: claim.encryptedInput.handle,
+    signature: claim.signature,
+    caller: recipient,
   });
   const decrypt = useUserDecrypt(
     {
@@ -142,14 +156,33 @@ function ClaimCard({
     ? decrypt.data?.[privateClaim.revealedHandle]
     : undefined;
   const formattedAmount =
-    typeof decryptedValue === "bigint" && decimals.data !== undefined
-      ? formatUnits(decryptedValue, decimals.data)
+    typeof decryptedValue === "bigint"
+      ? decimals.data !== undefined
+        ? formatUnits(decryptedValue, decimals.data)
+        : `${decryptedValue.toString()} raw units`
       : undefined;
+  const tokenMatches =
+    airdropToken.data?.toLowerCase() === claim.tokenAddress.toLowerCase();
+  const authorizationReady = authorization.data === true && tokenMatches;
+  const authorizationPending =
+    authorization.isLoading || airdropToken.isLoading;
+  const authorizationError =
+    authorization.error?.message ??
+    airdropToken.error?.message ??
+    (authorization.data === false
+      ? "This claim is inactive, already used, or was not signed by the airdrop administrator."
+      : airdropToken.data && !tokenMatches
+        ? "The claim token does not match the token configured by this airdrop."
+        : undefined);
 
   async function reveal() {
     setActionError(undefined);
     try {
-      await privateClaim.reveal();
+      if (privateClaim.revealedHandle) {
+        await decrypt.refetch();
+      } else {
+        await privateClaim.reveal();
+      }
     } catch (error) {
       setActionError(error instanceof Error ? error.message : "Private reveal failed.");
     }
@@ -157,13 +190,23 @@ function ClaimCard({
 
   async function submitClaim() {
     setActionError(undefined);
+    setConfirmingClaim(true);
     try {
+      if (!publicClient) {
+        throw new Error("Sepolia RPC is unavailable.");
+      }
       const hash = await privateClaim.submitClaim();
+      const receipt = await publicClient.waitForTransactionReceipt({ hash });
+      if (receipt.status !== "success") {
+        throw new Error("The claim transaction reverted.");
+      }
       setSuccessHash(hash);
       removeLocalClaim(recipient, claim.id);
       await queryClient.invalidateQueries({ queryKey: claimsQueryKey(recipient) });
     } catch (error) {
       setActionError(error instanceof Error ? error.message : "Claim transaction failed.");
+    } finally {
+      setConfirmingClaim(false);
     }
   }
 
@@ -239,24 +282,35 @@ function ClaimCard({
       </div>
 
       {actionError && (
-        <div className="mb-4 rounded-xl border border-rose-400/15 bg-rose-400/[.04] p-3 text-xs leading-5 text-rose-200">
+        <div role="alert" className="mb-4 rounded-xl border border-rose-400/15 bg-rose-400/[.04] p-3 text-xs leading-5 text-rose-200">
           {actionError}
         </div>
       )}
       {decrypt.error && (
-        <div className="mb-4 rounded-xl border border-rose-400/15 bg-rose-400/[.04] p-3 text-xs leading-5 text-rose-200">
+        <div role="alert" className="mb-4 rounded-xl border border-rose-400/15 bg-rose-400/[.04] p-3 text-xs leading-5 text-rose-200">
           {decrypt.error.message}
+        </div>
+      )}
+      {authorizationError && (
+        <div className="mb-4 rounded-xl border border-amber-400/15 bg-amber-400/[.04] p-3 text-xs leading-5 text-amber-100/80">
+          {authorizationError}
         </div>
       )}
 
       {!formattedAmount ? (
         <Button
           onClick={() => void reveal()}
-          disabled={revealBusy}
+          disabled={
+            revealBusy || authorizationPending || !authorizationReady
+          }
           className="h-12 w-full rounded-2xl"
         >
-          {revealBusy ? (
+          {authorizationPending ? (
+            <><LoaderCircle className="animate-spin" size={16} /> Validating authorization…</>
+          ) : revealBusy ? (
             <><LoaderCircle className="animate-spin" size={16} /> Authorizing private reveal…</>
+          ) : privateClaim.revealedHandle ? (
+            <><FileKey2 size={16} /> Retry private decryption</>
           ) : (
             <><FileKey2 size={16} /> Decrypt amount</>
           )}
@@ -264,10 +318,10 @@ function ClaimCard({
       ) : (
         <Button
           onClick={() => void submitClaim()}
-          disabled={privateClaim.isClaiming}
+          disabled={confirmingClaim || !authorizationReady}
           className="h-12 w-full rounded-2xl"
         >
-          {privateClaim.isClaiming ? (
+          {confirmingClaim ? (
             <><LoaderCircle className="animate-spin" size={16} /> Confirming private claim…</>
           ) : (
             `Claim ${formattedAmount} ${claim.tokenSymbol ?? ""}`

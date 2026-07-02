@@ -41,6 +41,7 @@ export function PrivacyNetworkBackground({
     let width = 0;
     let height = 0;
     let animationFrame = 0;
+    let resizeFrame = 0;
     let previousTime = 0;
     let scrollTarget = window.scrollY;
     let scrollCurrent = scrollTarget;
@@ -241,16 +242,21 @@ export function PrivacyNetworkBackground({
     const handleScroll = () => {
       scrollTarget = window.scrollY;
     };
+    const handleResize = () => {
+      window.cancelAnimationFrame(resizeFrame);
+      resizeFrame = window.requestAnimationFrame(resize);
+    };
 
     resize();
-    window.addEventListener("resize", resize, { passive: true });
+    window.addEventListener("resize", handleResize, { passive: true });
     window.addEventListener("scroll", handleScroll, { passive: true });
     document.addEventListener("visibilitychange", handleVisibility);
     animationFrame = window.requestAnimationFrame(draw);
 
     return () => {
       window.cancelAnimationFrame(animationFrame);
-      window.removeEventListener("resize", resize);
+      window.cancelAnimationFrame(resizeFrame);
+      window.removeEventListener("resize", handleResize);
       window.removeEventListener("scroll", handleScroll);
       document.removeEventListener("visibilitychange", handleVisibility);
     };

@@ -18,6 +18,7 @@ import { Link } from "react-router-dom";
 import { Logo } from "../components/brand/logo";
 import { PrivacyNetworkBackground } from "../components/effects/privacy-network-background";
 import { Button } from "../components/ui/button";
+import { buttonClasses } from "../components/ui/button-classes";
 import { PrivacyBadge } from "../components/ui/privacy-badge";
 
 export function Landing() {
@@ -26,16 +27,17 @@ export function Landing() {
       <PrivacyNetworkBackground />
       <header className="absolute inset-x-0 top-0 z-50">
         <div className="mx-auto flex h-20 max-w-[1280px] items-center justify-between px-5 lg:px-8">
-          <Link to="/"><Logo /></Link>
+          <Link to="/" aria-label="Privlo home"><Logo /></Link>
           <nav className="hidden items-center gap-8 text-sm text-slate-400 md:flex">
             <a href="#product" className="hover:text-white">Product</a>
             <a href="#privacy" className="hover:text-white">Privacy</a>
             <a href="#how-it-works" className="hover:text-white">How it works</a>
           </nav>
-          <Link to="/app">
-            <Button variant="secondary" className="h-10 rounded-full">
-              Launch app <ArrowRight size={14} />
-            </Button>
+          <Link
+            to="/app"
+            className={buttonClasses("secondary", "h-10 rounded-full")}
+          >
+            Launch app <ArrowRight size={14} />
           </Link>
         </div>
       </header>
@@ -56,15 +58,23 @@ export function Landing() {
               Fully confidential onchain—from allocation to claim.
             </p>
             <div className="mt-9 flex flex-col justify-center gap-3 sm:flex-row">
-              <Link to="/app/campaigns/new">
-                <Button className="h-12 w-full rounded-full px-6 sm:w-auto">
-                  Create private campaign <ArrowRight size={16} />
-                </Button>
+              <Link
+                to="/app/campaigns/new"
+                className={buttonClasses(
+                  "primary",
+                  "h-12 w-full rounded-full px-6 sm:w-auto",
+                )}
+              >
+                Create private campaign <ArrowRight size={16} />
               </Link>
-              <Link to="/app/claims">
-                <Button variant="secondary" className="h-12 w-full rounded-full px-6 sm:w-auto">
-                  View my claims
-                </Button>
+              <Link
+                to="/app/claims"
+                className={buttonClasses(
+                  "secondary",
+                  "h-12 w-full rounded-full px-6 sm:w-auto",
+                )}
+              >
+                View my claims
               </Link>
             </div>
 
@@ -175,8 +185,14 @@ export function Landing() {
           <div className="cta-panel relative mx-auto max-w-[1180px] overflow-hidden rounded-[32px] border border-mint/10 px-6 py-20 text-center sm:px-12">
             <h2 className="relative font-display text-4xl font-semibold tracking-[-.05em] sm:text-6xl">Ready to move privately?</h2>
             <p className="relative mx-auto mt-5 max-w-xl text-slate-400">Launch a confidential financial flow on Sepolia in minutes.</p>
-            <Link to="/app" className="relative mt-8 inline-block">
-              <Button className="h-12 rounded-full px-7">Launch Privlo <ArrowRight size={16} /></Button>
+            <Link
+              to="/app"
+              className={buttonClasses(
+                "primary",
+                "relative mt-8 h-12 rounded-full px-7",
+              )}
+            >
+              Launch Privlo <ArrowRight size={16} />
             </Link>
           </div>
         </section>

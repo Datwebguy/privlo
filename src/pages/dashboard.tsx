@@ -11,7 +11,7 @@ import { Link } from "react-router-dom";
 import { formatEther } from "viem";
 import { useAccount, useBalance, useBlockNumber } from "wagmi";
 import { CampaignCard } from "../components/campaign/campaign-card";
-import { Button } from "../components/ui/button";
+import { buttonClasses } from "../components/ui/button-classes";
 import { PrivacyBadge } from "../components/ui/privacy-badge";
 import { useCampaigns } from "../hooks/use-campaigns";
 
@@ -35,10 +35,11 @@ export function Dashboard() {
             Confirmed confidential distributions from your connected wallet appear here.
           </p>
         </div>
-        <Link to="/app/campaigns/new">
-          <Button className="w-full sm:w-auto">
-            <Plus size={16} /> Create campaign
-          </Button>
+        <Link
+          to="/app/campaigns/new"
+          className={buttonClasses("primary", "w-full sm:w-auto")}
+        >
+          <Plus size={16} /> Create campaign
         </Link>
       </section>
 

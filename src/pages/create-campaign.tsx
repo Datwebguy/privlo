@@ -55,7 +55,16 @@ import { PrivacyBadge } from "../components/ui/privacy-badge";
 import { campaignQueryKey } from "../hooks/use-campaigns";
 import { useTokenOpsEncryptor } from "../hooks/use-tokenops-encryptor";
 import { saveCampaign } from "../lib/campaign-repository";
-import { publishClaims } from "../lib/claim-repository";
+import {
+  publishClaims,
+  saveLocalClaims,
+} from "../lib/claim-repository";
+import {
+  MAX_AMOUNT_INPUT_LENGTH,
+  MAX_CAMPAIGN_NAME_LENGTH,
+  MAX_CSV_BYTES,
+  MAX_RECIPIENTS,
+} from "../lib/runtime-validation";
 import { cn } from "../lib/utils";
 import type {
   Campaign,
@@ -122,6 +131,13 @@ function prepareRecipients(
   const seen = new Set<string>();
   const recipients: PreparedRecipient[] = [];
 
+  if (rows.length > MAX_RECIPIENTS) {
+    return {
+      recipients: [],
+      errors: [`Campaigns support at most ${MAX_RECIPIENTS} recipients.`],
+    };
+  }
+
   rows.forEach((row, index) => {
     const label = `Recipient ${index + 1}`;
     if (!isAddress(row.address)) {
@@ -137,10 +153,14 @@ function prepareRecipients(
     seen.add(normalized);
 
     try {
-      const amount = parseUnits(row.amount.trim(), decimals);
+      const amountInput = row.amount.trim();
+      if (amountInput.length > MAX_AMOUNT_INPUT_LENGTH) {
+        throw new Error("amount-too-long");
+      }
+      const amount = parseUnits(amountInput, decimals);
       if (amount <= 0n) throw new Error("zero");
       if (amount > MAX_UINT64) throw new Error("uint64");
-      recipients.push({ address, amount, displayAmount: row.amount.trim() });
+      recipients.push({ address, amount, displayAmount: amountInput });
     } catch {
       errors.push(`${label} has an invalid or unsupported amount.`);
     }
@@ -195,6 +215,7 @@ export function CreateCampaign() {
 
   const detailValid =
     name.trim().length >= 3 &&
+    name.trim().length <= MAX_CAMPAIGN_NAME_LENGTH &&
     validToken &&
     Boolean(metadata) &&
     (type !== "airdrop" ||
@@ -216,6 +237,9 @@ export function CreateCampaign() {
     if (!file) return;
     setCsvError(undefined);
     try {
+      if (file.size > MAX_CSV_BYTES) {
+        throw new Error("CSV files must be 1 MB or smaller.");
+      }
       const text = await file.text();
       const lines = text
         .split(/\r?\n/)
@@ -224,6 +248,11 @@ export function CreateCampaign() {
       const dataLines = lines[0]?.toLowerCase().includes("address")
         ? lines.slice(1)
         : lines;
+      if (dataLines.length > MAX_RECIPIENTS) {
+        throw new Error(
+          `CSV files support at most ${MAX_RECIPIENTS} recipients.`,
+        );
+      }
       const imported = dataLines.map((line, index) => {
         const [address = "", amount = ""] = line
           .split(",")
@@ -324,6 +353,7 @@ export function CreateCampaign() {
             <input
               value={name}
               onChange={(event) => setName(event.target.value)}
+              maxLength={MAX_CAMPAIGN_NAME_LENGTH}
               placeholder="Internal campaign label"
               className="field-input"
             />
@@ -332,6 +362,7 @@ export function CreateCampaign() {
             <input
               value={tokenAddress}
               onChange={(event) => setTokenAddress(event.target.value)}
+              maxLength={42}
               placeholder="0x…"
               className="field-input font-mono"
             />
@@ -394,6 +425,7 @@ export function CreateCampaign() {
                     onChange={(event) => updateRecipient(recipient.id, "amount", event.target.value)}
                     placeholder="Amount"
                     inputMode="decimal"
+                    maxLength={MAX_AMOUNT_INPUT_LENGTH}
                     className="field-input h-11 pr-14"
                   />
                   <span className="absolute right-3 top-3.5 text-[10px] text-slate-600">{metadata?.symbol}</span>
@@ -409,7 +441,13 @@ export function CreateCampaign() {
               </div>
             ))}
           </div>
-          <button onClick={() => setRecipients((current) => [...current, newRecipient()])} className="mt-4 inline-flex items-center gap-2 text-sm font-semibold text-mint">
+          <button
+            disabled={recipients.length >= MAX_RECIPIENTS}
+            onClick={() =>
+              setRecipients((current) => [...current, newRecipient()])
+            }
+            className="mt-4 inline-flex items-center gap-2 text-sm font-semibold text-mint disabled:cursor-not-allowed disabled:opacity-40"
+          >
             <Plus size={15} /> Add recipient
           </button>
 
@@ -522,9 +560,15 @@ function DisperseExecution({
   }
 
   async function execute() {
-    if (!address) return;
+    if (!address || !wallet.data) return;
     setError(undefined);
     try {
+      const [activeAccount] = await wallet.data.getAddresses();
+      if (!activeAccount || activeAccount.toLowerCase() !== address.toLowerCase()) {
+        throw new Error(
+          "The active wallet changed. Reconnect the original creator before continuing.",
+        );
+      }
       const result = await disperse.mutateAsync({
         token,
         mode: "direct",
@@ -575,7 +619,7 @@ function DisperseExecution({
           {approving ? <><LoaderCircle className="animate-spin" size={16} /> Confirming approval…</> : <><ShieldCheck size={16} /> Approve TokenOps for one hour</>}
         </Button>
       ) : (
-        <Button className="mt-6 h-12 w-full rounded-2xl" onClick={() => void execute()} disabled={!preflight.data?.ready || disperse.isPending || !tokenOpsEncryption.encryptor}>
+        <Button className="mt-6 h-12 w-full rounded-2xl" onClick={() => void execute()} disabled={!preflight.data?.ready || disperse.isPending || !tokenOpsEncryption.encryptor || !wallet.data}>
           {disperse.isPending ? <><LoaderCircle className="animate-spin" size={16} /> Encrypting and confirming…</> : tokenOpsEncryption.isLoading ? <><LoaderCircle className="animate-spin" size={16} /> Initializing Zama…</> : <><ShieldCheck size={16} /> Encrypt & execute distribution</>}
         </Button>
       )}
@@ -611,6 +655,7 @@ function AirdropExecution({
   const [issuing, setIssuing] = useState(false);
   const [progress, setProgress] = useState("");
   const [error, setError] = useState<string>();
+  const [deliveryWarning, setDeliveryWarning] = useState<string>();
   const [resultHash, setResultHash] = useState<`0x${string}`>();
   const factory = requireFheAirdropFactoryAddress(sepolia.id);
   const total = recipients.reduce((sum, recipient) => sum + recipient.amount, 0n);
@@ -651,8 +696,27 @@ function AirdropExecution({
   async function execute() {
     if (!address || !wallet.data || !tokenOpsEncryption.encryptor) return;
     setError(undefined);
+    setDeliveryWarning(undefined);
     setIssuing(true);
+    let confirmed:
+      | {
+          hash: `0x${string}`;
+          airdrop: Address;
+        }
+      | undefined;
     try {
+      const now = Math.floor(Date.now() / 1000);
+      if (startTimestamp <= now || endTimestamp <= now) {
+        throw new Error(
+          "The claim window is no longer valid. Return to Details and choose new dates.",
+        );
+      }
+      const [activeAccount] = await wallet.data.getAddresses();
+      if (!activeAccount || activeAccount.toLowerCase() !== address.toLowerCase()) {
+        throw new Error(
+          "The active wallet changed. Reconnect the original creator before continuing.",
+        );
+      }
       setProgress("Deploying and funding confidential airdrop…");
       const result = await createAirdrop.mutateAsync({
         params: {
@@ -666,8 +730,26 @@ function AirdropExecution({
         amount: total,
         account: address,
       });
+      confirmed = result;
 
       const createdAt = Date.now();
+      saveCampaign({
+        id: result.hash,
+        creator: address,
+        name,
+        type: "airdrop",
+        tokenAddress: token,
+        tokenSymbol,
+        recipients: recipients.length,
+        createdAt,
+        status: "confirmed",
+        transactionHash: result.hash,
+        chainId: sepolia.id,
+      });
+      await queryClient.invalidateQueries({
+        queryKey: campaignQueryKey(address),
+      });
+
       const claims: Array<{
         recipient: Address;
         claim: import("../types/campaign").ConfidentialClaim;
@@ -675,6 +757,15 @@ function AirdropExecution({
 
       for (let index = 0; index < recipients.length; index += 1) {
         const recipient = recipients[index];
+        const [signingAccount] = await wallet.data.getAddresses();
+        if (
+          !signingAccount ||
+          signingAccount.toLowerCase() !== address.toLowerCase()
+        ) {
+          throw new Error(
+            "The creator wallet changed while authorizations were being issued.",
+          );
+        }
         setProgress(`Encrypting authorization ${index + 1} of ${recipients.length}…`);
         const encryptedInput = await encryptUint64({
           encryptor: tokenOpsEncryption.encryptor,
@@ -689,7 +780,7 @@ function AirdropExecution({
           recipient: recipient.address,
           encryptedAmountHandle: encryptedInput.handle,
         });
-        claims.push({
+        const issuedClaim = {
           recipient: recipient.address,
           claim: {
             id: `${result.airdrop}:${encryptedInput.handle}`,
@@ -701,28 +792,33 @@ function AirdropExecution({
             signature,
             createdAt,
           },
-        });
+        };
+        claims.push(issuedClaim);
+        saveLocalClaims([issuedClaim]);
       }
 
       setProgress("Delivering encrypted claim authorizations…");
-      await publishClaims(claims);
-      saveCampaign({
-        id: result.hash,
-        creator: address,
-        name,
-        type: "airdrop",
-        tokenAddress: token,
-        tokenSymbol,
-        recipients: recipients.length,
-        createdAt,
-        status: "confirmed",
-        transactionHash: result.hash,
-        chainId: sepolia.id,
-      });
-      await queryClient.invalidateQueries({ queryKey: campaignQueryKey(address) });
+      try {
+        await publishClaims(claims);
+      } catch (cause) {
+        setDeliveryWarning(
+          cause instanceof Error
+            ? `The airdrop is funded and local claims are safe, but remote delivery failed: ${cause.message}`
+            : "The airdrop is funded and local claims are safe, but remote delivery failed.",
+        );
+      }
       setResultHash(result.hash);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Airdrop creation failed.");
+      if (confirmed) {
+        setResultHash(confirmed.hash);
+        setDeliveryWarning(
+          "The airdrop was funded onchain, but authorization generation was interrupted. Do not fund it again; recover or withdraw the remaining pool from the TokenOps airdrop contract.",
+        );
+      } else {
+        setError(
+          cause instanceof Error ? cause.message : "Airdrop creation failed.",
+        );
+      }
     } finally {
       setIssuing(false);
       setProgress("");
@@ -730,7 +826,15 @@ function AirdropExecution({
   }
 
   if (!address) return <ExecutionNotice message="Connect a Sepolia wallet to continue." />;
-  if (resultHash) return <ExecutionSuccess hash={resultHash} onDone={() => navigate("/app")} />;
+  if (resultHash) {
+    return (
+      <ExecutionSuccess
+        hash={resultHash}
+        warning={deliveryWarning}
+        onDone={() => navigate("/app")}
+      />
+    );
+  }
 
   return (
     <ExecutionPanel>
@@ -775,18 +879,31 @@ function StatusRow({ complete, label }: { complete: boolean; label: string }) {
   return <div className="flex items-center gap-3 border-b border-white/[.055] py-3 first:pt-0"><span className={cn("grid size-5 place-items-center rounded-full", complete ? "bg-mint/15 text-mint" : "bg-white/[.05] text-slate-600")}>{complete ? <Check size={12} /> : <span className="size-1.5 rounded-full bg-current" />}</span><span className="text-sm text-slate-400">{label}</span></div>;
 }
 function ErrorNotice({ message }: { message: string }) {
-  return <div className="mt-4 flex gap-2 rounded-xl border border-rose-400/15 bg-rose-400/[.04] p-3 text-xs leading-5 text-rose-200"><AlertCircle size={15} className="mt-0.5 shrink-0" />{message}</div>;
+  return <div role="alert" className="mt-4 flex gap-2 rounded-xl border border-rose-400/15 bg-rose-400/[.04] p-3 text-xs leading-5 text-rose-200"><AlertCircle size={15} className="mt-0.5 shrink-0" />{message}</div>;
 }
 function ExecutionNotice({ message }: { message: string }) {
   return <ExecutionPanel><div className="flex items-center gap-3 text-sm text-slate-400"><AlertCircle size={17} />{message}</div></ExecutionPanel>;
 }
-function ExecutionSuccess({ hash, onDone }: { hash: `0x${string}`; onDone: () => void }) {
+function ExecutionSuccess({
+  hash,
+  warning,
+  onDone,
+}: {
+  hash: `0x${string}`;
+  warning?: string;
+  onDone: () => void;
+}) {
   return (
     <ExecutionPanel>
       <div className="py-4 text-center">
         <span className="mx-auto grid size-12 place-items-center rounded-full bg-mint text-[#06241c]"><CheckCircle2 size={23} /></span>
         <h2 className="mt-5 font-display text-2xl font-semibold">Campaign confirmed</h2>
         <p className="mt-2 text-sm text-slate-500">The TokenOps transaction was mined on Sepolia.</p>
+        {warning && (
+          <div className="mx-auto mt-4 max-w-xl rounded-xl border border-amber-400/20 bg-amber-400/[.05] p-3 text-left text-xs leading-5 text-amber-100/80">
+            {warning}
+          </div>
+        )}
         <a href={`https://sepolia.etherscan.io/tx/${hash}`} target="_blank" rel="noreferrer" className="mt-4 block truncate font-mono text-xs text-mint">{hash}</a>
         <Button className="mt-6" onClick={onDone}>Return to dashboard</Button>
       </div>

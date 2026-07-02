@@ -1,5 +1,6 @@
 import type { Address } from "viem";
 import type { Campaign } from "../types/campaign";
+import { parseCampaigns } from "./runtime-validation";
 
 const STORAGE_KEY = "privlo:confirmed-campaigns:v1";
 
@@ -8,8 +9,7 @@ function readAll(): Campaign[] {
   try {
     const value = window.localStorage.getItem(STORAGE_KEY);
     if (!value) return [];
-    const campaigns = JSON.parse(value) as Campaign[];
-    return Array.isArray(campaigns) ? campaigns : [];
+    return parseCampaigns(JSON.parse(value));
   } catch {
     return [];
   }

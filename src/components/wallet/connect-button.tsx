@@ -40,6 +40,7 @@ function walletErrorMessage(error: Error | null) {
 export function ConnectButton() {
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [uiError, setUiError] = useState<string>();
   const { address, isConnected, connector } = useAccount();
   const chainId = useChainId();
   const {
@@ -58,7 +59,7 @@ export function ConnectButton() {
   } = useSwitchChain();
 
   const isWrongNetwork = isConnected && chainId !== sepolia.id;
-  const error = walletErrorMessage(connectError ?? switchError);
+  const error = uiError ?? walletErrorMessage(connectError ?? switchError);
 
   useEffect(() => {
     if (!copied) return;
@@ -66,20 +67,39 @@ export function ConnectButton() {
     return () => window.clearTimeout(timeout);
   }, [copied]);
 
+  useEffect(() => {
+    if (!open) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("keydown", closeOnEscape);
+    return () => document.removeEventListener("keydown", closeOnEscape);
+  }, [open]);
+
   function clearError() {
+    setUiError(undefined);
     resetConnect();
     resetSwitch();
   }
 
   async function copyAddress() {
     if (!address) return;
-    await navigator.clipboard.writeText(address);
-    setCopied(true);
+    try {
+      await navigator.clipboard.writeText(address);
+      setCopied(true);
+    } catch {
+      setUiError(
+        "Address copying is unavailable. Select and copy the address manually.",
+      );
+    }
   }
 
   if (!isConnected) {
     const injectedConnector =
-      connectors.find((candidate) => candidate.id === "injected") ?? connectors[0];
+      (typeof window !== "undefined" && window.ethereum
+        ? connectors.find((candidate) => candidate.id === "injected")
+        : connectors.find((candidate) => candidate.id !== "injected")) ??
+      connectors[0];
 
     return (
       <div className="relative">
@@ -194,6 +214,7 @@ export function ConnectButton() {
           </div>
         </>
       )}
+      {error && <WalletError message={error} onClose={clearError} />}
     </div>
   );
 }
@@ -206,7 +227,10 @@ function WalletError({
   onClose: () => void;
 }) {
   return (
-    <div className="absolute right-0 top-12 z-50 flex w-72 gap-2 rounded-xl border border-rose-400/20 bg-[#171112] p-3 text-xs text-rose-200 shadow-2xl">
+    <div
+      role="alert"
+      className="absolute right-0 top-12 z-50 flex w-72 gap-2 rounded-xl border border-rose-400/20 bg-[#171112] p-3 text-xs text-rose-200 shadow-2xl"
+    >
       <AlertCircle size={15} className="mt-0.5 shrink-0" />
       <span className="flex-1 leading-5">{message}</span>
       <button aria-label="Dismiss error" onClick={onClose}>

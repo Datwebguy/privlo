@@ -165,6 +165,9 @@ VITE_ZAMA_RELAYER_URL=
 # Optional: authenticated claim delivery API for cross-device claims.
 VITE_PRIVLO_API_URL=
 
+# Optional: enables WalletConnect modal support for mobile wallets.
+VITE_WALLETCONNECT_PROJECT_ID=
+
 # Optional: override TokenOps registry addresses when its deployment changes.
 VITE_TOKENOPS_DISPERSE_ADDRESS=
 VITE_TOKENOPS_AIRDROP_FACTORY_ADDRESS=
@@ -340,8 +343,9 @@ The current production build passes all four checks with zero reported npm vulne
 3. Select **Node.js 22**.
 4. Add `VITE_SEPOLIA_RPC_URL` under Project Settings -> Environment Variables.
 5. Add `VITE_PRIVLO_API_URL` after deploying the authenticated claim inbox.
-6. Leave `VITE_ZAMA_RELAYER_URL` empty to use Zama's Sepolia preset.
-7. Deploy and verify `/`, `/app`, `/app/campaigns/new`, and `/app/claims`.
+6. Add `VITE_WALLETCONNECT_PROJECT_ID` if you want mobile WalletConnect support.
+7. Leave `VITE_ZAMA_RELAYER_URL` empty to use Zama's Sepolia preset.
+8. Deploy and verify `/`, `/app`, `/app/campaigns/new`, and `/app/claims`.
 
 [`vercel.json`](vercel.json) already defines the production build, `dist` output, SPA rewrites,
 immutable asset caching, and baseline security headers.

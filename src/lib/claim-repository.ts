@@ -1,15 +1,19 @@
 import type { Address } from "viem";
 import type { ConfidentialClaim } from "../types/campaign";
+import {
+  MAX_CLAIMS_PER_RESPONSE,
+  parseClaimInbox,
+  parseClaims,
+} from "./runtime-validation";
 
 const STORAGE_KEY = "privlo:claim-inbox:v1";
 
 function readLocalClaims(): Record<string, ConfidentialClaim[]> {
   if (typeof window === "undefined") return {};
   try {
-    return JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? "{}") as Record<
-      string,
-      ConfidentialClaim[]
-    >;
+    return parseClaimInbox(
+      JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? "{}"),
+    );
   } catch {
     return {};
   }
@@ -34,7 +38,7 @@ export function saveLocalClaims(
             item.encryptedInput.handle === claim.encryptedInput.handle
           ),
       ),
-    ];
+    ].slice(0, MAX_CLAIMS_PER_RESPONSE);
   }
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(inbox));
 }
@@ -46,21 +50,26 @@ export async function getClaims(recipient: Address): Promise<ConfidentialClaim[]
 
   const response = await fetch(
     `${apiUrl.replace(/\/$/, "")}/claims?recipient=${recipient}`,
-    { headers: { Accept: "application/json" } },
+    {
+      headers: { Accept: "application/json" },
+      signal: AbortSignal.timeout(10_000),
+    },
   );
   if (!response.ok) {
     throw new Error(`Claim inbox returned ${response.status}.`);
   }
-  const remote = (await response.json()) as ConfidentialClaim[];
+  const remote = parseClaims(await response.json());
   const merged = [...remote, ...local];
-  return merged.filter(
-    (claim, index) =>
-      merged.findIndex(
-        (candidate) =>
-          candidate.airdropAddress === claim.airdropAddress &&
-          candidate.encryptedInput.handle === claim.encryptedInput.handle,
-      ) === index,
-  );
+  return merged
+    .filter(
+      (claim, index) =>
+        merged.findIndex(
+          (candidate) =>
+            candidate.airdropAddress === claim.airdropAddress &&
+            candidate.encryptedInput.handle === claim.encryptedInput.handle,
+        ) === index,
+    )
+    .slice(0, MAX_CLAIMS_PER_RESPONSE);
 }
 
 export async function publishClaims(
@@ -74,6 +83,7 @@ export async function publishClaims(
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ claims }),
+    signal: AbortSignal.timeout(10_000),
   });
   if (!response.ok) {
     throw new Error(`Claim inbox rejected delivery with ${response.status}.`);

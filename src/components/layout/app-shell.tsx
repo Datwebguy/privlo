@@ -49,15 +49,21 @@ export function AppShell() {
           </nav>
 
           <div className="flex items-center gap-2">
-            <button className="hidden size-10 place-items-center rounded-full text-slate-500 hover:bg-white/5 sm:grid">
+            <a
+              href="https://github.com/Datwebguy/privlo#how-to-use-privlo"
+              target="_blank"
+              rel="noreferrer"
+              aria-label="Open Privlo help documentation"
+              className="hidden size-10 place-items-center rounded-full text-slate-500 hover:bg-white/5 sm:grid"
+            >
               <CircleHelp size={18} />
-            </button>
+            </a>
             <ConnectButton />
           </div>
         </div>
       </header>
 
-      <main className="relative z-10 mx-auto max-w-[1280px] px-5 py-8 lg:px-8 lg:py-12">
+      <main className="relative z-10 mx-auto max-w-[1280px] px-5 pb-28 pt-8 md:pb-8 lg:px-8 lg:py-12">
         <Outlet />
       </main>
 
