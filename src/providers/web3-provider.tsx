@@ -1,4 +1,3 @@
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   indexedDBStorage,
   RelayerWeb,
@@ -15,8 +14,7 @@ import {
 } from "../config/create-wagmi-config";
 import { WagmiConfigContext, useWagmiConfig } from "./wagmi-config-context";
 
-function ZamaGate({ children }: PropsWithChildren) {
-  const { isConnected } = useAccount();
+function ZamaConnected({ children }: PropsWithChildren) {
   const config = useWagmiConfig();
   const zama = useMemo(() => {
     const signer = new WagmiSigner({ config });
@@ -34,8 +32,6 @@ function ZamaGate({ children }: PropsWithChildren) {
     return { signer, relayer };
   }, [config]);
 
-  if (!isConnected) return children;
-
   return (
     <ZamaProvider
       relayer={zama.relayer}
@@ -48,23 +44,19 @@ function ZamaGate({ children }: PropsWithChildren) {
   );
 }
 
+function ZamaGate({ children }: PropsWithChildren) {
+  const { isConnected } = useAccount();
+  if (!isConnected) return children;
+  return <ZamaConnected>{children}</ZamaConnected>;
+}
+
 export function Web3Provider({ children }: PropsWithChildren) {
-  const [queryClient] = useState(
-    () =>
-      new QueryClient({
-        defaultOptions: {
-          queries: { staleTime: 12_000, retry: 1 },
-        },
-      }),
-  );
   const [config] = useState<Config>(() => createPrivloWagmiConfig());
 
   return (
     <WagmiConfigContext.Provider value={config}>
       <WagmiProvider config={config} reconnectOnMount={false}>
-        <QueryClientProvider client={queryClient}>
-          <ZamaGate>{children}</ZamaGate>
-        </QueryClientProvider>
+        <ZamaGate>{children}</ZamaGate>
       </WagmiProvider>
     </WagmiConfigContext.Provider>
   );
