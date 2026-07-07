@@ -5,37 +5,42 @@ import {
   ZamaProvider,
 } from "@zama-fhe/react-sdk";
 import { WagmiSigner } from "@zama-fhe/react-sdk/wagmi";
-import { useMemo, useState, type PropsWithChildren } from "react";
+import { useEffect, useMemo, useState, type PropsWithChildren } from "react";
 import { sepolia } from "wagmi/chains";
 import { useAccount, WagmiProvider, type Config } from "wagmi";
-import {
-  createPrivloWagmiConfig,
-  rpcUrl,
-} from "../config/create-wagmi-config";
+import { createPrivloWagmiConfig } from "../config/create-wagmi-config";
 import { WagmiConfigContext, useWagmiConfig } from "./wagmi-config-context";
 
 function ZamaConnected({ children }: PropsWithChildren) {
   const config = useWagmiConfig();
   const { address } = useAccount();
   const zama = useMemo(() => {
+    if (!address) return null;
     const signer = new WagmiSigner({ config });
     const relayer = new RelayerWeb({
       getChainId: () => signer.getChainId(),
       transports: {
         [sepolia.id]: {
           ...SepoliaConfig,
-          network: rpcUrl,
           relayerUrl:
             import.meta.env.VITE_ZAMA_RELAYER_URL ?? SepoliaConfig.relayerUrl,
         },
       },
     });
     return { signer, relayer };
-  }, [config]);
+  }, [config, address]);
+
+  useEffect(() => {
+    const instance = zama?.relayer;
+    return () => {
+      instance?.terminate();
+    };
+  }, [zama?.relayer]);
+
+  if (!zama) return children;
 
   return (
     <ZamaProvider
-      key={address ?? "disconnected"}
       relayer={zama.relayer}
       signer={zama.signer}
       storage={indexedDBStorage}
