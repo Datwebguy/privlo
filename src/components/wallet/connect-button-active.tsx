@@ -88,9 +88,7 @@ export function ConnectButtonActive() {
 
   useEffect(() => {
     if (consumePickerRequest()) setPickerOpen(true);
-    // Open the picker once when the wallet layer boots after an explicit click.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [consumePickerRequest]);
 
   useEffect(() => {
     if (!copied) return;

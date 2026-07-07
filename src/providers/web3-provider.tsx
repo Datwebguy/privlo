@@ -62,7 +62,7 @@ export function Web3Provider({ children }: PropsWithChildren) {
 
   return (
     <WagmiConfigContext.Provider value={config}>
-      <WagmiProvider config={config} reconnectOnMount={false}>
+      <WagmiProvider config={config} reconnectOnMount>
         <ZamaGate>{children}</ZamaGate>
       </WagmiProvider>
     </WagmiConfigContext.Provider>

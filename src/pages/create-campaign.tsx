@@ -1,6 +1,6 @@
 import { lazy, Suspense } from "react";
+import { useAccount } from "wagmi";
 import { WalletRequired } from "../components/wallet/wallet-required";
-import { useWalletActivation } from "../providers/wallet-activation-context";
 
 const CreateCampaignFlow = lazy(() =>
   import("./create-campaign-flow").then((module) => ({
@@ -9,13 +9,13 @@ const CreateCampaignFlow = lazy(() =>
 );
 
 export function CreateCampaign() {
-  const { isActive } = useWalletActivation();
+  const { isConnected } = useAccount();
 
-  if (!isActive) {
+  if (!isConnected) {
     return (
       <WalletRequired
         title="Connect to create a campaign"
-        copy="Privlo only initializes wallet software after you click connect."
+        copy="Connect your wallet on Sepolia to build a confidential distribution."
       />
     );
   }

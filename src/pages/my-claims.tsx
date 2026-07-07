@@ -1,6 +1,6 @@
 import { lazy, Suspense } from "react";
+import { useAccount } from "wagmi";
 import { WalletRequired } from "../components/wallet/wallet-required";
-import { useWalletActivation } from "../providers/wallet-activation-context";
 
 const MyClaimsFlow = lazy(() =>
   import("./my-claims-flow").then((module) => ({
@@ -9,13 +9,13 @@ const MyClaimsFlow = lazy(() =>
 );
 
 export function MyClaims() {
-  const { isActive } = useWalletActivation();
+  const { isConnected } = useAccount();
 
-  if (!isActive) {
+  if (!isConnected) {
     return (
       <WalletRequired
         title="Connect to view your claims"
-        copy="Privlo only initializes wallet software after you click connect."
+        copy="Connect the recipient wallet on Sepolia to decrypt and claim confidential allocations."
       />
     );
   }

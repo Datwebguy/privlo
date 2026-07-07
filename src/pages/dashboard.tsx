@@ -1,6 +1,6 @@
 import { lazy, Suspense } from "react";
+import { useAccount } from "wagmi";
 import { DashboardPreview } from "./dashboard-preview";
-import { useWalletActivation } from "../providers/wallet-activation-context";
 
 const DashboardWallet = lazy(() =>
   import("./dashboard-wallet").then((module) => ({
@@ -9,9 +9,9 @@ const DashboardWallet = lazy(() =>
 );
 
 export function Dashboard() {
-  const { isActive } = useWalletActivation();
+  const { isConnected } = useAccount();
 
-  if (!isActive) return <DashboardPreview />;
+  if (!isConnected) return <DashboardPreview />;
 
   return (
     <Suspense
