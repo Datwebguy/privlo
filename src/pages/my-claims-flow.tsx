@@ -60,7 +60,8 @@ export function MyClaimsFlow() {
             My private claims
           </h1>
           <p className="mt-3 text-sm text-slate-500">
-            Recipient-bound authorizations loaded from your encrypted claim inbox.
+            Confidential allocations sent to your wallet appear here when they are
+            ready to decrypt and claim.
           </p>
         </div>
         <PrivacyBadge label="Visible only to you" />
@@ -83,8 +84,8 @@ export function MyClaimsFlow() {
 
       {!isConnected ? (
         <EmptyClaims
-          title="Connect to find your claims"
-          copy="Your inbox is queried only after a Sepolia wallet is connected."
+          title="Connect your wallet"
+          copy="Connect the recipient wallet that was added to a campaign to see pending confidential claims."
         />
       ) : claims.isLoading ? (
         <div className="mt-6 space-y-4">
@@ -93,12 +94,19 @@ export function MyClaimsFlow() {
           ))}
         </div>
       ) : claims.error ? (
-        <EmptyClaims title="Claim inbox unavailable" copy={claims.error.message} />
+        <EmptyClaims
+          title="Could not load claims"
+          copy="Your claims could not be loaded right now. Check your connection, stay on Sepolia, and try Refresh inbox."
+          hints={[
+            "If you just received an allocation, wait a moment and refresh.",
+          ]}
+        />
       ) : (
         <>
           <div className="mt-7 flex items-center justify-between">
             <p className="text-sm text-slate-500">
-              {claims.data?.length ?? 0} pending for{" "}
+              {claims.data?.length ?? 0} pending{" "}
+              {claims.data?.length === 1 ? "claim" : "claims"} for{" "}
               <span className="font-mono text-slate-300">{shortAddress(address)}</span>
             </p>
             <button onClick={() => void claims.refetch()} className="text-xs font-semibold text-mint">
@@ -118,12 +126,12 @@ export function MyClaimsFlow() {
             </div>
           ) : (
             <EmptyClaims
-              title="No pending claims"
-              copy={
-                import.meta.env.VITE_PRIVLO_API_URL
-                  ? "No pending encrypted authorizations were returned for this wallet."
-                  : "No local authorizations exist for this wallet. Configure VITE_PRIVLO_API_URL for cross-device delivery."
-              }
+              title="No claims yet"
+              copy="Nothing is waiting for this wallet. Claims show up after a campaign creator adds your address to a confidential airdrop and issues your authorization."
+              hints={[
+                "Use the same recipient wallet the creator added to the campaign.",
+                "New allocations can take a moment to appear — tap Refresh inbox.",
+              ]}
             />
           )}
         </>
@@ -369,16 +377,32 @@ function ClaimCard({
   );
 }
 
-function EmptyClaims({ title, copy }: { title: string; copy: string }) {
+function EmptyClaims({
+  title,
+  copy,
+  hints = [],
+}: {
+  title: string;
+  copy: string;
+  hints?: string[];
+}) {
   return (
-    <div className="mt-6 grid min-h-72 place-items-center rounded-3xl border border-dashed border-white/[.09] bg-white/[.015] p-8 text-center">
-      <div>
-        <span className="mx-auto grid size-12 place-items-center rounded-2xl bg-white/[.04] text-slate-400">
-          <ReceiptText size={21} />
-        </span>
-        <h2 className="mt-5 font-display text-lg font-semibold">{title}</h2>
-        <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-500">{copy}</p>
-      </div>
+    <div className="mt-6 rounded-3xl border border-dashed border-white/[.09] bg-white/[.015] p-8 text-center">
+      <span className="mx-auto grid size-12 place-items-center rounded-2xl bg-white/[.04] text-slate-400">
+        <ReceiptText size={21} />
+      </span>
+      <h2 className="mt-5 font-display text-lg font-semibold">{title}</h2>
+      <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-500">{copy}</p>
+      {hints.length > 0 && (
+        <ul className="mx-auto mt-6 max-w-md space-y-2 text-left text-xs leading-6 text-slate-600">
+          {hints.map((hint) => (
+            <li key={hint} className="flex gap-2">
+              <span className="mt-2 size-1 shrink-0 rounded-full bg-mint/60" />
+              <span>{hint}</span>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

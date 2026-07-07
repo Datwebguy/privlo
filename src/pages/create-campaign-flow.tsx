@@ -965,7 +965,14 @@ function AirdropExecution({
       )}
       <StatusRow complete={true} label="Recipient allocations validated" />
       <StatusRow complete={Boolean(operator.data)} label="Airdrop factory authorization" />
-      <StatusRow complete={Boolean(import.meta.env.VITE_PRIVLO_API_URL)} label={import.meta.env.VITE_PRIVLO_API_URL ? "Remote claim inbox configured" : "Local claim inbox (testing only)"} />
+      <StatusRow
+        complete={Boolean(import.meta.env.VITE_PRIVLO_API_URL)}
+        label={
+          import.meta.env.VITE_PRIVLO_API_URL
+            ? "Recipients can load claims on any device"
+            : "Claims stay on this browser until delivery is enabled"
+        }
+      />
       {error && <ErrorNotice message={error} />}
       {tokenOpsEncryption.error && <ErrorNotice message={tokenOpsEncryption.error.message} />}
       {progress && <p className="mt-4 text-xs text-mint">{progress}</p>}
