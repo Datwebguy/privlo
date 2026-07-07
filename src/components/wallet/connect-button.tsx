@@ -10,7 +10,8 @@ import {
   Wallet,
   X,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import type { Connector } from "wagmi";
 import {
   useAccount,
   useChainId,
@@ -37,8 +38,28 @@ function walletErrorMessage(error: Error | null) {
   return error.message.split("\n")[0] || "Wallet request failed.";
 }
 
+function connectorLabel(connector: Connector) {
+  if (connector.id === "walletConnect") return "WalletConnect";
+  if (connector.name) return connector.name;
+  return "Browser wallet";
+}
+
+function connectorDescription(connector: Connector) {
+  if (connector.id === "walletConnect") {
+    return "Scan a QR code with a mobile wallet";
+  }
+  if (connector.id === "io.metamask") {
+    return "Connect through the MetaMask extension";
+  }
+  if (connector.id.includes("phantom")) {
+    return "Connect through the Phantom extension";
+  }
+  return "Connect through your browser wallet extension";
+}
+
 export function ConnectButton() {
-  const [open, setOpen] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [uiError, setUiError] = useState<string>();
   const { address, isConnected, connector } = useAccount();
@@ -61,6 +82,16 @@ export function ConnectButton() {
   const isWrongNetwork = isConnected && chainId !== sepolia.id;
   const error = uiError ?? walletErrorMessage(connectError ?? switchError);
 
+  const availableConnectors = useMemo(() => {
+    const seen = new Set<string>();
+    return connectors.filter((candidate) => {
+      const key = candidate.id === "injected" ? candidate.name : candidate.id;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [connectors]);
+
   useEffect(() => {
     if (!copied) return;
     const timeout = window.setTimeout(() => setCopied(false), 1_600);
@@ -68,13 +99,16 @@ export function ConnectButton() {
   }, [copied]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!pickerOpen && !accountMenuOpen) return;
     const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setOpen(false);
+      if (event.key === "Escape") {
+        setPickerOpen(false);
+        setAccountMenuOpen(false);
+      }
     };
     document.addEventListener("keydown", closeOnEscape);
     return () => document.removeEventListener("keydown", closeOnEscape);
-  }, [open]);
+  }, [pickerOpen, accountMenuOpen]);
 
   function clearError() {
     setUiError(undefined);
@@ -94,29 +128,40 @@ export function ConnectButton() {
     }
   }
 
-  if (!isConnected) {
-    const injectedConnector =
-      (typeof window !== "undefined" && window.ethereum
-        ? connectors.find((candidate) => candidate.id === "injected")
-        : connectors.find((candidate) => candidate.id !== "injected")) ??
-      connectors[0];
+  async function connectWith(connector: Connector) {
+    clearError();
+    try {
+      await connect({ connector });
+      setPickerOpen(false);
+    } catch {
+      // useConnect surfaces the error state.
+    }
+  }
 
+  if (!isConnected) {
     return (
       <div className="relative">
         <Button
           onClick={() => {
             clearError();
-            if (injectedConnector) connect({ connector: injectedConnector });
+            setPickerOpen(true);
           }}
-          disabled={isConnecting || !injectedConnector}
+          disabled={isConnecting || availableConnectors.length === 0}
           className="h-10 rounded-full"
         >
           <Wallet size={15} />
           {isConnecting ? "Confirm in wallet…" : "Connect wallet"}
         </Button>
-        {error && (
-          <WalletError message={error} onClose={clearError} />
+
+        {pickerOpen && (
+          <WalletPicker
+            connectors={availableConnectors}
+            isConnecting={isConnecting}
+            onClose={() => setPickerOpen(false)}
+            onSelect={(selected) => void connectWith(selected)}
+          />
         )}
+        {error && <WalletError message={error} onClose={clearError} />}
       </div>
     );
   }
@@ -144,9 +189,9 @@ export function ConnectButton() {
   return (
     <div className="relative">
       <Button
-        aria-expanded={open}
+        aria-expanded={accountMenuOpen}
         aria-haspopup="menu"
-        onClick={() => setOpen((current) => !current)}
+        onClick={() => setAccountMenuOpen((current) => !current)}
         variant="secondary"
         className="h-10 rounded-full pl-2.5 pr-3"
       >
@@ -157,12 +202,12 @@ export function ConnectButton() {
         <ChevronDown size={14} className="text-slate-500" />
       </Button>
 
-      {open && (
+      {accountMenuOpen && (
         <>
           <button
             aria-label="Close wallet menu"
             className="fixed inset-0 z-40 cursor-default"
-            onClick={() => setOpen(false)}
+            onClick={() => setAccountMenuOpen(false)}
           />
           <div
             role="menu"
@@ -202,7 +247,7 @@ export function ConnectButton() {
               <button
                 role="menuitem"
                 onClick={() => {
-                  setOpen(false);
+                  setAccountMenuOpen(false);
                   disconnect();
                 }}
                 className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-rose-300/80 hover:bg-rose-400/[.06] hover:text-rose-200"
@@ -216,6 +261,74 @@ export function ConnectButton() {
       )}
       {error && <WalletError message={error} onClose={clearError} />}
     </div>
+  );
+}
+
+function WalletPicker({
+  connectors,
+  isConnecting,
+  onClose,
+  onSelect,
+}: {
+  connectors: Connector[];
+  isConnecting: boolean;
+  onClose: () => void;
+  onSelect: (connector: Connector) => void;
+}) {
+  return (
+    <>
+      <button
+        aria-label="Close wallet picker"
+        className="fixed inset-0 z-40 cursor-default bg-black/55 backdrop-blur-[1px]"
+        onClick={onClose}
+      />
+      <div
+        role="dialog"
+        aria-labelledby="wallet-picker-title"
+        className="absolute right-0 top-12 z-50 w-[min(100vw-2rem,22rem)] rounded-2xl border border-white/10 bg-[#101619] p-3 shadow-2xl"
+      >
+        <div className="flex items-start justify-between gap-3 px-1 pb-3">
+          <div>
+            <p id="wallet-picker-title" className="text-sm font-semibold text-white">
+              Connect a wallet
+            </p>
+            <p className="mt-1 text-xs leading-5 text-slate-500">
+              Choose how you want to connect to Privlo on Sepolia.
+            </p>
+          </div>
+          <button
+            aria-label="Close wallet picker"
+            onClick={onClose}
+            className="grid size-8 place-items-center rounded-lg text-slate-500 hover:bg-white/[.05] hover:text-white"
+          >
+            <X size={15} />
+          </button>
+        </div>
+
+        <div className="space-y-2">
+          {connectors.map((connector) => (
+            <button
+              key={`${connector.id}-${connector.name}`}
+              disabled={isConnecting}
+              onClick={() => onSelect(connector)}
+              className="flex w-full items-center gap-3 rounded-xl border border-white/[.06] bg-white/[.02] px-3 py-3 text-left transition hover:border-mint/20 hover:bg-mint/[.04] disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-white/[.05] text-slate-300">
+                <Wallet size={18} />
+              </span>
+              <span className="min-w-0">
+                <span className="block text-sm font-semibold text-white">
+                  {connectorLabel(connector)}
+                </span>
+                <span className="mt-0.5 block text-xs leading-5 text-slate-500">
+                  {connectorDescription(connector)}
+                </span>
+              </span>
+            </button>
+          ))}
+        </div>
+      </div>
+    </>
   );
 }
 

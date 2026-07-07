@@ -11,8 +11,10 @@ const walletConnectProjectId =
 
 export const wagmiConfig = createConfig({
   chains: [sepolia],
+  multiInjectedProviderDiscovery: true,
   connectors: [
     injected({ shimDisconnect: true }),
+    injected({ target: "metaMask", shimDisconnect: true }),
     ...(walletConnectProjectId
       ? [
           walletConnect({
