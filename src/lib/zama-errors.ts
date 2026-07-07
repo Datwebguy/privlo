@@ -15,12 +15,19 @@ export function formatExecutionError(error: unknown): string {
   const root = unwrapCause(error);
   const formatted = formatZamaError(root);
   if (formatted !== root.message.split("\n")[0]) return formatted;
-  if (/fhe encryption failed/i.test(error.message)) {
+  if (
+    /fhe encryption failed/i.test(error.message) ||
+    /encrypt timed out/i.test(error.message) ||
+    /request encrypt timed out/i.test(error.message)
+  ) {
     const detail = root.message.split("\n")[0];
+    if (/timed out/i.test(detail)) {
+      return "Encryption timed out. Wait until the screen shows the privacy engine is ready (first visit can take up to 90 seconds), then try again.";
+    }
     if (detail && detail !== error.message) {
       return `Encryption failed: ${detail}`;
     }
-    return "FHE encryption failed. Hard refresh, stay on Sepolia, and wait for the privacy engine to finish loading (first run can take up to 90 seconds).";
+    return "FHE encryption failed. Hard refresh, stay on Sepolia, and wait for the privacy engine to finish loading.";
   }
   return error.message.split("\n")[0] || "Distribution failed.";
 }

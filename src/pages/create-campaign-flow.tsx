@@ -654,14 +654,18 @@ function DisperseExecution({
 }) {
   const { address } = useAccount();
   const zamaSDK = useZamaSDK();
-  const fhe = useFheReady();
+  const singleton = requireFheDisperseSingletonAddress(sepolia.id);
+  const fhe = useFheReady(
+    address
+      ? { contractAddress: singleton, userAddress: address }
+      : undefined,
+  );
   const publicClient = usePublicClient({ chainId: sepolia.id });
   const wallet = useWalletClient({ chainId: sepolia.id });
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const [approving, setApproving] = useState(false);
   const [error, setError] = useState<string>();
-  const singleton = requireFheDisperseSingletonAddress(sepolia.id);
   const amounts = useMemo(() => recipients.map((recipient) => recipient.amount), [recipients]);
   const total = amounts.reduce((sum, amount) => sum + amount, 0n);
   const addresses = useMemo(() => recipients.map((recipient) => recipient.address), [recipients]);
@@ -744,7 +748,6 @@ function DisperseExecution({
   }
 
   const needsApproval = preflight.data?.hasApprovedSingleton === false;
-  const fheBlocked = fhe.initError ?? (fhe.busy && !fhe.ready ? "loading" : null);
   return (
     <ExecutionPanel>
       <div className="space-y-5">
@@ -770,10 +773,11 @@ function DisperseExecution({
       {preflight.isLoading && <p className="mt-4 text-xs text-slate-500">Running TokenOps preflight checks…</p>}
       {preflight.error && <ErrorNotice message={preflight.error.message} />}
       {error && <ErrorNotice message={error} />}
-      {fheBlocked === "loading" && (
-        <p className="mt-4 text-xs text-slate-500">
-          Loading privacy engine… first visit can take up to 90 seconds while
-          Zama FHE artifacts download.
+      {!fhe.ready && !fhe.initError && (
+        <p className="mt-4 flex items-center gap-2 text-xs text-slate-500">
+          <LoaderCircle size={14} className="animate-spin text-mint" />
+          Preparing privacy engine… first visit can take up to 90 seconds. Do
+          not click execute until this finishes.
         </p>
       )}
       {fhe.initError && (
@@ -791,12 +795,13 @@ function DisperseExecution({
             !preflight.data?.ready ||
             disperse.isPending ||
             !wallet.data ||
-            Boolean(fheBlocked)
+            !fhe.ready ||
+            fhe.busy
           }
         >
           {disperse.isPending ? (
             <><LoaderCircle className="animate-spin" size={16} /> Encrypting and confirming…</>
-          ) : fhe.busy ? (
+          ) : !fhe.ready || fhe.busy ? (
             <><LoaderCircle className="animate-spin" size={16} /> Preparing encryption…</>
           ) : (
             <><ShieldCheck size={16} /> Encrypt & execute distribution</>
@@ -829,7 +834,12 @@ function AirdropExecution({
 }) {
   const { address } = useAccount();
   const zamaSDK = useZamaSDK();
-  const fhe = useFheReady();
+  const factory = requireFheAirdropFactoryAddress(sepolia.id);
+  const fhe = useFheReady(
+    address
+      ? { contractAddress: factory, userAddress: address }
+      : undefined,
+  );
   const publicClient = usePublicClient({ chainId: sepolia.id });
   const wallet = useWalletClient({ chainId: sepolia.id });
   const queryClient = useQueryClient();
@@ -840,7 +850,6 @@ function AirdropExecution({
   const [error, setError] = useState<string>();
   const [deliveryWarning, setDeliveryWarning] = useState<string>();
   const [resultHash, setResultHash] = useState<`0x${string}`>();
-  const factory = requireFheAirdropFactoryAddress(sepolia.id);
   const total = recipients.reduce((sum, recipient) => sum + recipient.amount, 0n);
 
   const operator = useReadContract({
@@ -1063,9 +1072,10 @@ function AirdropExecution({
       />
       {error && <ErrorNotice message={error} />}
       {progress && <p className="mt-4 text-xs text-mint">{progress}</p>}
-      {fhe.busy && !fhe.ready && !fhe.initError && (
-        <p className="mt-4 text-xs text-slate-500">
-          Loading privacy engine… first visit can take up to 90 seconds.
+      {!fhe.ready && !fhe.initError && (
+        <p className="mt-4 flex items-center gap-2 text-xs text-slate-500">
+          <LoaderCircle size={14} className="animate-spin text-mint" />
+          Preparing privacy engine… first visit can take up to 90 seconds.
         </p>
       )}
       {fhe.initError && <ErrorNotice message={formatExecutionError(fhe.initError)} />}
@@ -1077,9 +1087,9 @@ function AirdropExecution({
         <Button
           className="mt-6 h-12 w-full rounded-2xl"
           onClick={() => void execute()}
-          disabled={issuing || fhe.busy || Boolean(fhe.initError)}
+          disabled={issuing || !fhe.ready || fhe.busy || Boolean(fhe.initError)}
         >
-          {issuing ? <><LoaderCircle className="animate-spin" size={16} /> Processing authorizations…</> : fhe.busy ? <><LoaderCircle className="animate-spin" size={16} /> Preparing encryption…</> : <><Gift size={16} /> Fund & issue private claims</>}
+          {issuing ? <><LoaderCircle className="animate-spin" size={16} /> Processing authorizations…</> : !fhe.ready || fhe.busy ? <><LoaderCircle className="animate-spin" size={16} /> Preparing encryption…</> : <><Gift size={16} /> Fund & issue private claims</>}
         </Button>
       )}
       <p className="mt-3 text-center text-[11px] leading-5 text-slate-600">
