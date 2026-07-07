@@ -14,6 +14,7 @@
     "typecheck": "tsc -b --pretty false"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.110.1",
     "@tanstack/react-query": "^5.81.5",
     "@tokenops/sdk": "^1.1.1",
     "@zama-fhe/react-sdk": "3.0.0",
@@ -32,6 +33,7 @@
     "@types/node": "^22.10.5",
     "@types/react": "^18.3.18",
     "@types/react-dom": "^18.3.5",
+    "@vercel/node": "^5.8.22",
     "@vitejs/plugin-react": "^4.3.4",
     "autoprefixer": "^10.4.20",
     "eslint": "^9.17.0",

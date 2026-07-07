@@ -15,15 +15,23 @@ import {
   ShieldCheck,
   Sparkles,
 } from "lucide-react";
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { formatUnits, parseAbi } from "viem";
-import { useAccount, usePublicClient, useReadContract } from "wagmi";
+import {
+  useAccount,
+  usePublicClient,
+  useReadContract,
+  useWalletClient,
+} from "wagmi";
 import { sepolia } from "wagmi/chains";
 import { Button } from "../components/ui/button";
 import { PrivacyBadge } from "../components/ui/privacy-badge";
 import { claimsQueryKey, useClaims } from "../hooks/use-claims";
 import { usePrivateClaim } from "../hooks/use-private-claim";
-import { removeLocalClaim } from "../lib/claim-repository";
+import {
+  markClaimClaimed,
+  type SignMessageFn,
+} from "../lib/claim-repository";
 import { shortAddress } from "../lib/utils";
 import type { ConfidentialClaim } from "../types/campaign";
 
@@ -31,7 +39,17 @@ const decimalsAbi = parseAbi(["function decimals() view returns (uint8)"]);
 
 export function MyClaims() {
   const { isConnected, address } = useAccount();
-  const claims = useClaims(address);
+  const { data: walletClient } = useWalletClient();
+  const signMessage = useCallback<SignMessageFn>(
+    async (message) => {
+      if (!walletClient || !address) {
+        throw new Error("Connect a wallet to access your claim inbox.");
+      }
+      return walletClient.signMessage({ account: address, message });
+    },
+    [address, walletClient],
+  );
+  const claims = useClaims(address, signMessage);
 
   return (
     <div className="mx-auto max-w-4xl">
@@ -90,7 +108,12 @@ export function MyClaims() {
           {claims.data?.length ? (
             <div className="mt-3 space-y-4">
               {claims.data.map((claim) => (
-                <ClaimCard key={claim.id} claim={claim} recipient={address!} />
+                <ClaimCard
+                  key={claim.id}
+                  claim={claim}
+                  recipient={address!}
+                  signMessage={signMessage}
+                />
               ))}
             </div>
           ) : (
@@ -98,7 +121,7 @@ export function MyClaims() {
               title="No pending claims"
               copy={
                 import.meta.env.VITE_PRIVLO_API_URL
-                  ? "No unclaimed TokenOps authorizations were returned for this wallet."
+                  ? "No pending encrypted authorizations were returned for this wallet."
                   : "No local authorizations exist for this wallet. Configure VITE_PRIVLO_API_URL for cross-device delivery."
               }
             />
@@ -112,9 +135,11 @@ export function MyClaims() {
 function ClaimCard({
   claim,
   recipient,
+  signMessage,
 }: {
   claim: ConfidentialClaim;
   recipient: `0x${string}`;
+  signMessage: SignMessageFn;
 }) {
   const queryClient = useQueryClient();
   const publicClient = usePublicClient({ chainId: sepolia.id });
@@ -201,7 +226,16 @@ function ClaimCard({
         throw new Error("The claim transaction reverted.");
       }
       setSuccessHash(hash);
-      removeLocalClaim(recipient, claim.id);
+      try {
+        await markClaimClaimed({
+          recipient,
+          claimId: claim.id,
+          transactionHash: hash,
+          signMessage,
+        });
+      } catch {
+        // Onchain claim succeeded; inbox sync can be retried on refresh.
+      }
       await queryClient.invalidateQueries({ queryKey: claimsQueryKey(recipient) });
     } catch (error) {
       setActionError(error instanceof Error ? error.message : "Claim transaction failed.");

@@ -119,6 +119,38 @@ function localInputValue(timestamp: number) {
   return new Date(timestamp - offset).toISOString().slice(0, 16);
 }
 
+type NormalizeAmountResult =
+  | { ok: true; amountInput: string }
+  | { ok: false; error: string };
+
+function normalizeAmountInput(
+  value: string,
+  decimals: number,
+): NormalizeAmountResult {
+  const normalized = value.trim().replace(/,/g, "");
+  if (!normalized) return { ok: false, error: "needs an amount." };
+  if (normalized.length > MAX_AMOUNT_INPUT_LENGTH) {
+    return {
+      ok: false,
+      error: `amount must be ${MAX_AMOUNT_INPUT_LENGTH} characters or fewer.`,
+    };
+  }
+  if (!/^\d+(\.\d+)?$/.test(normalized)) {
+    return {
+      ok: false,
+      error: "amount must be a number, for example 100 or 100.25.",
+    };
+  }
+  const [, fractional = ""] = normalized.split(".");
+  if (fractional.length > decimals) {
+    return {
+      ok: false,
+      error: `amount has too many decimal places. This token supports ${decimals}.`,
+    };
+  }
+  return { ok: true, amountInput: normalized };
+}
+
 function prepareRecipients(
   rows: RecipientAllocation[],
   decimals?: number,
@@ -152,17 +184,26 @@ function prepareRecipients(
     }
     seen.add(normalized);
 
+    const parsed = normalizeAmountInput(row.amount, decimals);
+    if (!parsed.ok) {
+      errors.push(`${label} ${parsed.error}`);
+      return;
+    }
+
     try {
-      const amountInput = row.amount.trim();
-      if (amountInput.length > MAX_AMOUNT_INPUT_LENGTH) {
-        throw new Error("amount-too-long");
-      }
+      const amountInput = parsed.amountInput;
       const amount = parseUnits(amountInput, decimals);
-      if (amount <= 0n) throw new Error("zero");
-      if (amount > MAX_UINT64) throw new Error("uint64");
+      if (amount <= 0n) {
+        errors.push(`${label} amount must be greater than zero.`);
+        return;
+      }
+      if (amount > MAX_UINT64) {
+        errors.push(`${label} amount is too large for TokenOps encrypted uint64 amounts.`);
+        return;
+      }
       recipients.push({ address, amount, displayAmount: amountInput });
     } catch {
-      errors.push(`${label} has an invalid or unsupported amount.`);
+      errors.push(`${label} amount could not be parsed for this token.`);
     }
   });
 
@@ -175,6 +216,8 @@ export function CreateCampaign() {
   const [type, setType] = useState<CampaignType>("disperse");
   const [name, setName] = useState("");
   const [tokenAddress, setTokenAddress] = useState(defaultToken);
+  const [recipientAttemptedContinue, setRecipientAttemptedContinue] =
+    useState(false);
   const [recipients, setRecipients] = useState<RecipientAllocation[]>([
     newRecipient(),
   ]);
@@ -212,6 +255,11 @@ export function CreateCampaign() {
     () => prepareRecipients(recipients, metadata?.decimals),
     [recipients, metadata?.decimals],
   );
+  const recipientSymbol = metadata?.symbol ?? "token";
+  const usingTokenOpsDemoToken =
+    Boolean(defaultToken) &&
+    validToken &&
+    tokenAddress.toLowerCase() === defaultToken.toLowerCase();
 
   const detailValid =
     name.trim().length >= 3 &&
@@ -226,6 +274,7 @@ export function CreateCampaign() {
     field: "address" | "amount",
     value: string,
   ) {
+    setRecipientAttemptedContinue(false);
     setRecipients((current) =>
       current.map((recipient) =>
         recipient.id === id ? { ...recipient, [field]: value } : recipient,
@@ -264,6 +313,7 @@ export function CreateCampaign() {
       });
       if (!imported.length) throw new Error("The CSV has no recipient rows.");
       setRecipients(imported);
+      setRecipientAttemptedContinue(false);
     } catch (error) {
       setCsvError(error instanceof Error ? error.message : "Could not read CSV.");
     } finally {
@@ -372,6 +422,12 @@ export function CreateCampaign() {
                 {metadata.name} ({metadata.symbol}) · {metadata.decimals} decimals
               </FieldHint>
             )}
+            {usingTokenOpsDemoToken && (
+              <FieldHint>
+                This is the TokenOps Sepolia demo confidential token. Replace it
+                with your own ERC-7984 token address for a real campaign.
+              </FieldHint>
+            )}
             {tokenMetadata.isError && <FieldHint error>This address does not expose valid token metadata.</FieldHint>}
           </Field>
           {type === "airdrop" && (
@@ -423,12 +479,14 @@ export function CreateCampaign() {
                     aria-label={`Recipient ${index + 1} amount`}
                     value={recipient.amount}
                     onChange={(event) => updateRecipient(recipient.id, "amount", event.target.value)}
-                    placeholder="Amount"
+                    placeholder={`Amount in ${recipientSymbol}`}
                     inputMode="decimal"
                     maxLength={MAX_AMOUNT_INPUT_LENGTH}
                     className="field-input h-11 pr-14"
                   />
-                  <span className="absolute right-3 top-3.5 text-[10px] text-slate-600">{metadata?.symbol}</span>
+                  <span className="absolute right-3 top-3.5 text-[10px] text-slate-600">
+                    {recipientSymbol}
+                  </span>
                 </div>
                 <button
                   aria-label={`Remove recipient ${index + 1}`}
@@ -451,9 +509,14 @@ export function CreateCampaign() {
             <Plus size={15} /> Add recipient
           </button>
 
-          {prepared.errors.length > 0 && (
-            <div className="mt-5 rounded-xl border border-amber-400/15 bg-amber-400/[.04] p-4 text-xs text-amber-100/70">
-              {prepared.errors.map((error) => <p key={error}>• {error}</p>)}
+          {recipientAttemptedContinue && prepared.errors.length > 0 && (
+            <div
+              role="alert"
+              className="mt-5 rounded-xl border border-amber-400/15 bg-amber-400/[.04] p-4 text-xs text-amber-100/70"
+            >
+              {prepared.errors.map((error) => (
+                <p key={error}>• {error}</p>
+              ))}
             </div>
           )}
         </section>
@@ -488,12 +551,25 @@ export function CreateCampaign() {
 
       {step < 3 && (
         <div className="mt-8 flex justify-between">
-          <Button variant="ghost" disabled={step === 0} onClick={() => setStep((current) => current - 1)}>
+          <Button
+            variant="ghost"
+            disabled={step === 0}
+            onClick={() => {
+              if (step === 2) setRecipientAttemptedContinue(false);
+              setStep((current) => current - 1);
+            }}
+          >
             Back
           </Button>
           <Button
-            disabled={(step === 1 && !detailValid) || (step === 2 && prepared.errors.length > 0)}
-            onClick={() => setStep((current) => current + 1)}
+            disabled={step === 1 && !detailValid}
+            onClick={() => {
+              if (step === 2) {
+                setRecipientAttemptedContinue(true);
+                if (prepared.errors.length > 0) return;
+              }
+              setStep((current) => current + 1);
+            }}
           >
             Continue <ArrowRight size={16} />
           </Button>
@@ -799,7 +875,16 @@ function AirdropExecution({
 
       setProgress("Delivering encrypted claim authorizations…");
       try {
-        await publishClaims(claims);
+        if (!wallet.data) {
+          throw new Error("Creator wallet is unavailable for claim delivery.");
+        }
+        await publishClaims({
+          creator: address,
+          campaignName: name,
+          signMessage: (message) =>
+            wallet.data!.signMessage({ account: address, message }),
+          claims,
+        });
       } catch (cause) {
         setDeliveryWarning(
           cause instanceof Error

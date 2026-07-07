@@ -13,6 +13,17 @@
       "destination": "/index.html"
     }
   ],
+  "functions": {
+    "api/claims/publish.ts": {
+      "maxDuration": 30
+    },
+    "api/claims/me.ts": {
+      "maxDuration": 15
+    },
+    "api/claims/mark-claimed.ts": {
+      "maxDuration": 15
+    }
+  },
   "headers": [
     {
       "source": "/(.*)",
