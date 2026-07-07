@@ -15,6 +15,8 @@
   <p>
     <a href="#quick-start"><strong>Run locally</strong></a>
     &nbsp;&middot;&nbsp;
+    <a href="#claim-inbox-api"><strong>Claim inbox API</strong></a>
+    &nbsp;&middot;&nbsp;
     <a href="#how-to-use-privlo"><strong>How to use</strong></a>
     &nbsp;&middot;&nbsp;
     <a href="./docs/protocol-integration.md"><strong>Protocol notes</strong></a>
@@ -116,7 +118,7 @@ flowchart LR
 | Private recipient reveal | Ready | Zama ACL grant and user-scoped decryption |
 | CTTT test-token faucet | Ready | Supports end-to-end Sepolia testing |
 | Simple Vesting | Planned | Visible but deliberately disabled until execution is complete |
-| Cross-device claim inbox | Integration point | Requires an authenticated API via `VITE_PRIVLO_API_URL` |
+| Cross-device claim inbox | Ready | Signed Privlo API via `VITE_PRIVLO_API_URL`; localStorage fallback when unset |
 
 ## Quick start
 
@@ -162,8 +164,9 @@ VITE_SEPOLIA_RPC_URL=https://ethereum-sepolia-rpc.publicnode.com
 # Optional: omit to use Zama's public Sepolia relayer preset.
 VITE_ZAMA_RELAYER_URL=
 
-# Optional: authenticated claim delivery API for cross-device claims.
-VITE_PRIVLO_API_URL=
+# Optional: signed claim inbox API for cross-device delivery.
+# Omit to use localStorage-only claim delivery during local testing.
+VITE_PRIVLO_API_URL=https://privlo.vercel.app/api
 
 # Optional: enables WalletConnect modal support for mobile wallets.
 VITE_WALLETCONNECT_PROJECT_ID=
@@ -176,6 +179,10 @@ VITE_TOKENOPS_VESTING_FACTORY_ADDRESS=
 
 No wallet private key belongs in these variables. Users sign transactions with their connected
 wallet. Never put a private key in a `VITE_` variable: Vite exposes those values to the browser.
+
+Server-only variables (`SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`) belong in Vercel project
+settings, not in `.env.local`. See [Claim inbox API](#claim-inbox-api) for the full production
+setup.
 
 ## How to use Privlo
 
@@ -241,7 +248,8 @@ wagmi + viem ---------------------------- Sepolia RPC
 | Wallet state | wagmi, viem, TanStack Query | Connection, Sepolia reads/writes, transaction state |
 | Confidentiality | `@zama-fhe/sdk`, `@zama-fhe/react-sdk` | Encryption, permits, ACL-scoped decryption |
 | Distribution | `@tokenops/sdk` subpath clients | Preflight, Disperse, Airdrop, and claim execution |
-| Hosting | Vercel | Static Vite deployment and SPA routing |
+| Hosting | Vercel | Static Vite deployment, SPA routing, and serverless claim inbox API |
+| Claim inbox | Supabase Postgres | Encrypted claim ticket storage indexed by recipient wallet |
 
 ## Zama and TokenOps integration
 
@@ -277,22 +285,114 @@ to that exact handle.
 ## Claim inbox API
 
 TokenOps airdrop authorizations are recipient-bound offchain payloads and cannot be reconstructed
-from public RPC logs. For cross-device production delivery, configure an authenticated service:
+from public RPC logs. Privlo ships a minimal **encrypted claim inbox** so recipients can discover
+pending authorizations from another browser or device.
 
-```http
-POST /claims
-Content-Type: application/json
+The API never custodies funds, holds private keys, decrypts amounts, or executes token transfers.
+All money movement stays onchain through TokenOps contracts and the connected user wallet.
 
-{ "claims": [{ "recipient": "0x...", "claim": { "...": "..." } }] }
+### What the API stores
+
+Only encrypted claim tickets — never plaintext amounts, private keys, or decrypted values:
+
+```ts
+type StoredClaim = {
+  id: string;
+  recipient: `0x${string}`;
+  creator: `0x${string}`;
+  campaignName: string;
+  tokenAddress: `0x${string}`;
+  tokenSymbol?: string;
+  airdropAddress: `0x${string}`;
+  encryptedInput: { handle: `0x${string}`; inputProof: `0x${string}` };
+  signature: `0x${string}`;
+  createdAt: number;
+  claimedAt?: number;
+  claimTransactionHash?: `0x${string}`;
+};
 ```
 
-```http
-GET /claims?recipient=0x...
+### API routes
+
+| Method | Route | Purpose |
+| --- | --- | --- |
+| `POST` | `/api/claims/publish` | Creator-signed delivery after airdrop creation |
+| `POST` | `/api/claims/me` | Recipient-signed fetch of pending claims |
+| `POST` | `/api/claims/mark-claimed` | Recipient-signed audit after onchain claim |
+
+Each route verifies an EIP-191 wallet signature, rejects plaintext `amount` fields, enforces payload
+size limits, and returns generic errors on auth failure.
+
+### Supabase setup
+
+1. Create a project at [supabase.com](https://supabase.com).
+2. Open **SQL Editor** and run [`supabase/schema.sql`](supabase/schema.sql):
+
+```sql
+create table if not exists claims (
+  id text primary key,
+  recipient text not null,
+  creator text not null,
+  campaign_name text not null,
+  token_address text not null,
+  token_symbol text,
+  airdrop_address text not null,
+  encrypted_handle text not null,
+  input_proof text not null,
+  signature text not null,
+  created_at bigint not null,
+  claimed_at bigint,
+  claim_transaction_hash text
+);
+
+create index if not exists claims_recipient_idx on claims (recipient);
+create index if not exists claims_creator_idx on claims (creator);
 ```
 
-The API must verify creator authorization on writes, verify recipient wallet ownership on reads,
-rate-limit requests, isolate records by wallet, and mark authorizations consumed after claim
-confirmation. It stores encrypted inputs and signatures, never plaintext allocations.
+3. Copy from **Project Settings → API**:
+   - **Project URL** → `SUPABASE_URL`
+   - **service_role** key → `SUPABASE_SERVICE_ROLE_KEY`
+
+> Use the **service role** key only on the server. Never expose it to the browser or prefix it
+> with `VITE_`.
+
+### Vercel environment variables
+
+Add these under **Project Settings → Environment Variables** in the Vercel dashboard:
+
+| Variable | Scope | Example |
+| --- | --- | --- |
+| `SUPABASE_URL` | Production, Preview | `https://xxxx.supabase.co` |
+| `SUPABASE_SERVICE_ROLE_KEY` | Production, Preview | `eyJ...` (service role) |
+| `VITE_PRIVLO_API_URL` | Production, Preview | `https://privlo.vercel.app/api` |
+| `VITE_SEPOLIA_RPC_URL` | Production, Preview | `https://ethereum-sepolia-rpc.publicnode.com` |
+| `VITE_WALLETCONNECT_PROJECT_ID` | Production, Preview | Your WalletConnect project ID |
+| `ALLOWED_ORIGINS` | Production, Preview (optional) | `https://privlo.vercel.app,http://localhost:5173` |
+
+**Server-only** (`SUPABASE_*`, `ALLOWED_ORIGINS`) — used by `/api/*` routes only.
+
+**Frontend** (`VITE_*`) — embedded in the Vite build at deploy time.
+
+After adding variables, trigger a **Redeploy** so the API routes and frontend both pick up the new
+configuration.
+
+### Local development
+
+- `npm run dev` serves the Vite frontend only. Claim API routes are not available through Vite.
+- To exercise `/api/*` locally, run `npx vercel dev` with the same env vars loaded.
+- Without `VITE_PRIVLO_API_URL`, the frontend falls back to **localStorage** claim delivery for
+  same-browser testing.
+
+### Signed message formats
+
+| Action | Message pattern |
+| --- | --- |
+| Publish | `Privlo publish claims for campaign {name}` |
+| View inbox | `Privlo view claims for {recipient}` |
+| Mark claimed | `Privlo mark claim claimed {claimId} for {recipient}` |
+
+Implementation: [`src/lib/claim-messages.ts`](src/lib/claim-messages.ts),
+[`src/lib/claim-repository.ts`](src/lib/claim-repository.ts).
 
 ## Routes
 
@@ -307,11 +407,16 @@ confirmation. It stores encrypted inputs and signatures, never plaintext allocat
 
 ```text
 privlo/
+|-- api/                        # Vercel serverless claim inbox routes
+|   |-- _lib/                   # Auth, validation, Supabase client, CORS
+|   `-- claims/                 # publish, me, mark-claimed handlers
 |-- docs/
 |   |-- assets/                 # README and product visuals
 |   |-- protocol-integration.md # Protocol invariants and references
 |   `-- video-pitch.md          # Three-minute demo pitch
 |-- public/                     # Favicon and public assets
+|-- supabase/
+|   `-- schema.sql              # Claim inbox table and indexes
 |-- src/
 |   |-- components/             # Brand, campaign, UI, layout, wallet
 |   |-- config/                 # Sepolia and chain configuration
@@ -341,14 +446,18 @@ The current production build passes all four checks with zero reported npm vulne
 1. Import [`Datwebguy/privlo`](https://github.com/Datwebguy/privlo) into Vercel.
 2. Keep the detected **Vite** framework preset.
 3. Select **Node.js 22**.
-4. Add `VITE_SEPOLIA_RPC_URL` under Project Settings -> Environment Variables.
-5. Add `VITE_PRIVLO_API_URL` after deploying the authenticated claim inbox.
-6. Add `VITE_WALLETCONNECT_PROJECT_ID` if you want mobile WalletConnect support.
-7. Leave `VITE_ZAMA_RELAYER_URL` empty to use Zama's Sepolia preset.
-8. Deploy and verify `/`, `/app`, `/app/campaigns/new`, and `/app/claims`.
+4. [Set up Supabase](#supabase-setup) and run [`supabase/schema.sql`](supabase/schema.sql).
+5. Add environment variables (see [Vercel environment variables](#vercel-environment-variables)):
+   - `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` (server)
+   - `VITE_PRIVLO_API_URL=https://<your-domain>/api` (frontend)
+   - `VITE_SEPOLIA_RPC_URL` (frontend)
+   - `VITE_WALLETCONNECT_PROJECT_ID` (optional, frontend)
+   - `ALLOWED_ORIGINS` (optional, server CORS)
+6. Deploy and verify `/`, `/app`, `/app/campaigns/new`, and `/app/claims`.
+7. Redeploy after any env var change so `VITE_*` values are baked into the frontend build.
 
-[`vercel.json`](vercel.json) already defines the production build, `dist` output, SPA rewrites,
-immutable asset caching, and baseline security headers.
+[`vercel.json`](vercel.json) defines the production build, `dist` output, SPA rewrites, API function
+timeouts, immutable asset caching, and baseline security headers.
 
 ## Security and production boundaries
 
@@ -363,9 +472,8 @@ immutable asset caching, and baseline security headers.
 - Persist only public campaign metadata; keep recipient authorization payloads behind wallet
   authentication.
 
-This repository provides a functional Sepolia client. A public production launch still requires a
-dedicated RPC provider, monitored hosting, and an authenticated claim inbox for cross-device
-airdrop delivery.
+This repository provides a functional Sepolia client with an optional encrypted claim inbox API. A
+public production launch still benefits from a dedicated RPC provider and monitored hosting.
 
 ## Zama Developer Program alignment
 
