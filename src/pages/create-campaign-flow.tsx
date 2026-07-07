@@ -14,6 +14,7 @@ import {
   useDisperse,
   usePreflightDisperse,
 } from "@tokenops/sdk/fhe-disperse/react";
+import { useZamaSDK } from "@zama-fhe/react-sdk";
 
 import {
   AlertCircle,
@@ -56,7 +57,7 @@ import { ConfidentialBalancePanel } from "../components/wallet/confidential-bala
 import { PrivacyBadge } from "../components/ui/privacy-badge";
 import { campaignQueryKey } from "../hooks/use-campaigns";
 import { confidentialBalanceQueryKey } from "../hooks/use-confidential-balance";
-import { useTokenOpsEncryptor } from "../hooks/use-tokenops-encryptor";
+
 import { saveCampaign } from "../lib/campaign-repository";
 import {
   publishClaims,
@@ -405,22 +406,6 @@ export function CreateCampaignFlow() {
         </section>
       )}
 
-      {step >= 1 && step <= 3 && validToken && metadata && address && (
-        <div className="mt-8">
-          <ConfidentialBalancePanel
-            tokenAddress={getAddress(tokenAddress)}
-            tokenSymbol={metadata.symbol}
-            decimals={metadata.decimals}
-            requiredAmount={step >= 2 ? campaignTotal : undefined}
-            title={
-              step >= 2
-                ? "Balances before you send"
-                : "Your distribution token balance"
-            }
-          />
-        </div>
-      )}
-
       {step === 1 && (
         <section className="mt-8 space-y-5 rounded-3xl border border-white/[.07] bg-panel/70 p-6 sm:p-8">
           <Field label="Campaign name">
@@ -454,6 +439,14 @@ export function CreateCampaignFlow() {
             )}
             {tokenMetadata.isError && <FieldHint error>This address does not expose valid token metadata.</FieldHint>}
           </Field>
+          {address && metadata && (
+            <ConfidentialBalancePanel
+              tokenAddress={getAddress(tokenAddress)}
+              tokenSymbol={metadata.symbol}
+              decimals={metadata.decimals}
+              title="Your distribution token balance"
+            />
+          )}
           {usingTokenOpsDemoToken && address && metadata && (
             <TestTokenFaucet
               recipient={address}
@@ -481,16 +474,23 @@ export function CreateCampaignFlow() {
       )}
 
       {step === 2 && (
-        <section className="mt-8">
+        <section className="mt-8 space-y-5">
+          {address && metadata && (
+            <ConfidentialBalancePanel
+              tokenAddress={getAddress(tokenAddress)}
+              tokenSymbol={metadata.symbol}
+              decimals={metadata.decimals}
+              requiredAmount={campaignTotal > 0n ? campaignTotal : undefined}
+              title="Balances before you send"
+            />
+          )}
           {usingTokenOpsDemoToken && address && metadata && (
-            <div className="mb-5">
-              <TestTokenFaucet
-                recipient={address}
-                campaignTotal={campaignTotal}
-                tokenSymbol={metadata.symbol}
-                decimals={metadata.decimals}
-              />
-            </div>
+            <TestTokenFaucet
+              recipient={address}
+              campaignTotal={campaignTotal}
+              tokenSymbol={metadata.symbol}
+              decimals={metadata.decimals}
+            />
           )}
           <div className="rounded-2xl border border-dashed border-white/[.11] bg-white/[.015] p-5">
             <input
@@ -570,7 +570,16 @@ export function CreateCampaignFlow() {
       )}
 
       {step === 3 && metadata && (
-        <section className="mt-8">
+        <section className="mt-8 space-y-5">
+          {address && (
+            <ConfidentialBalancePanel
+              tokenAddress={getAddress(tokenAddress)}
+              tokenSymbol={metadata.symbol}
+              decimals={metadata.decimals}
+              requiredAmount={campaignTotal > 0n ? campaignTotal : undefined}
+              title="Final balance check"
+            />
+          )}
           <div className="grid gap-4 sm:grid-cols-3">
             <ReviewItem label="Flow" value={type === "airdrop" ? "Confidential airdrop" : "Direct disperse"} />
             <ReviewItem label="Recipients" value={String(prepared.recipients.length)} />
@@ -581,6 +590,7 @@ export function CreateCampaignFlow() {
               name={name.trim()}
               token={getAddress(tokenAddress)}
               tokenSymbol={metadata.symbol}
+              decimals={metadata.decimals}
               recipients={prepared.recipients}
               startTimestamp={Math.floor(Date.parse(startTime) / 1000)}
               endTimestamp={Math.floor(Date.parse(endTime) / 1000)}
@@ -590,6 +600,7 @@ export function CreateCampaignFlow() {
               name={name.trim()}
               token={getAddress(tokenAddress)}
               tokenSymbol={metadata.symbol}
+              decimals={metadata.decimals}
               recipients={prepared.recipients}
             />
           )}
@@ -630,15 +641,17 @@ function DisperseExecution({
   name,
   token,
   tokenSymbol,
+  decimals,
   recipients,
 }: {
   name: string;
   token: Address;
   tokenSymbol: string;
+  decimals: number;
   recipients: PreparedRecipient[];
 }) {
   const { address } = useAccount();
-  const tokenOpsEncryption = useTokenOpsEncryptor();
+  const zamaSDK = useZamaSDK();
   const publicClient = usePublicClient({ chainId: sepolia.id });
   const wallet = useWalletClient({ chainId: sepolia.id });
   const queryClient = useQueryClient();
@@ -658,7 +671,7 @@ function DisperseExecution({
     mode: "direct",
   });
   const disperse = useDisperse({
-    encryptor: () => tokenOpsEncryption.encryptor,
+    encryptor: () => zamaSDK.relayer,
   });
 
   async function approve() {
@@ -730,27 +743,36 @@ function DisperseExecution({
   const needsApproval = preflight.data?.hasApprovedSingleton === false;
   return (
     <ExecutionPanel>
-      {token.toLowerCase() === defaultToken.toLowerCase() && (
-        <TestTokenFaucet
-          recipient={address}
-          campaignTotal={total}
+      <div className="space-y-5">
+        <ConfidentialBalancePanel
+          tokenAddress={token}
           tokenSymbol={tokenSymbol}
+          decimals={decimals}
+          requiredAmount={total > 0n ? total : undefined}
+          title="Wallet balances for this send"
         />
-      )}
+        {token.toLowerCase() === defaultToken.toLowerCase() && (
+          <TestTokenFaucet
+            recipient={address}
+            campaignTotal={total}
+            tokenSymbol={tokenSymbol}
+            decimals={decimals}
+          />
+        )}
+      </div>
       <StatusRow complete={Boolean(preflight.data?.amountsOk)} label="Recipient amounts validated" />
       <StatusRow complete={Boolean(preflight.data?.batchOk)} label="Within TokenOps batch limit" />
       <StatusRow complete={!needsApproval} label="TokenOps operator authorization" />
       {preflight.isLoading && <p className="mt-4 text-xs text-slate-500">Running TokenOps preflight checks…</p>}
       {preflight.error && <ErrorNotice message={preflight.error.message} />}
-      {tokenOpsEncryption.error && <ErrorNotice message={tokenOpsEncryption.error.message} />}
       {error && <ErrorNotice message={error} />}
       {needsApproval ? (
         <Button className="mt-6 h-12 w-full rounded-2xl" onClick={() => void approve()} disabled={approving}>
           {approving ? <><LoaderCircle className="animate-spin" size={16} /> Confirming approval…</> : <><ShieldCheck size={16} /> Approve TokenOps for one hour</>}
         </Button>
       ) : (
-        <Button className="mt-6 h-12 w-full rounded-2xl" onClick={() => void execute()} disabled={!preflight.data?.ready || disperse.isPending || !tokenOpsEncryption.encryptor || !wallet.data}>
-          {disperse.isPending ? <><LoaderCircle className="animate-spin" size={16} /> Encrypting and confirming…</> : tokenOpsEncryption.isLoading ? <><LoaderCircle className="animate-spin" size={16} /> Initializing Zama…</> : <><ShieldCheck size={16} /> Encrypt & execute distribution</>}
+        <Button className="mt-6 h-12 w-full rounded-2xl" onClick={() => void execute()} disabled={!preflight.data?.ready || disperse.isPending || !wallet.data}>
+          {disperse.isPending ? <><LoaderCircle className="animate-spin" size={16} /> Encrypting and confirming…</> : <><ShieldCheck size={16} /> Encrypt & execute distribution</>}
         </Button>
       )}
       {preflight.data?.blockers.map((blocker) => (
@@ -764,6 +786,7 @@ function AirdropExecution({
   name,
   token,
   tokenSymbol,
+  decimals,
   recipients,
   startTimestamp,
   endTimestamp,
@@ -771,12 +794,13 @@ function AirdropExecution({
   name: string;
   token: Address;
   tokenSymbol: string;
+  decimals: number;
   recipients: PreparedRecipient[];
   startTimestamp: number;
   endTimestamp: number;
 }) {
   const { address } = useAccount();
-  const tokenOpsEncryption = useTokenOpsEncryptor();
+  const zamaSDK = useZamaSDK();
   const publicClient = usePublicClient({ chainId: sepolia.id });
   const wallet = useWalletClient({ chainId: sepolia.id });
   const queryClient = useQueryClient();
@@ -799,7 +823,7 @@ function AirdropExecution({
     query: { enabled: Boolean(address) },
   });
   const createAirdrop = useCreateAndFundConfidentialAirdropAndGetAddress({
-    encryptor: () => tokenOpsEncryption.encryptor,
+    encryptor: () => zamaSDK.relayer,
   });
 
   async function approve() {
@@ -824,7 +848,7 @@ function AirdropExecution({
   }
 
   async function execute() {
-    if (!address || !wallet.data || !tokenOpsEncryption.encryptor) return;
+    if (!address || !wallet.data) return;
     setError(undefined);
     setDeliveryWarning(undefined);
     setIssuing(true);
@@ -898,7 +922,7 @@ function AirdropExecution({
         }
         setProgress(`Encrypting authorization ${index + 1} of ${recipients.length}…`);
         const encryptedInput = await encryptUint64({
-          encryptor: tokenOpsEncryption.encryptor,
+          encryptor: zamaSDK.relayer,
           contractAddress: result.airdrop,
           userAddress: recipient.address,
           value: recipient.amount,
@@ -983,13 +1007,23 @@ function AirdropExecution({
 
   return (
     <ExecutionPanel>
-      {token.toLowerCase() === defaultToken.toLowerCase() && (
-        <TestTokenFaucet
-          recipient={address}
-          campaignTotal={total}
+      <div className="space-y-5">
+        <ConfidentialBalancePanel
+          tokenAddress={token}
           tokenSymbol={tokenSymbol}
+          decimals={decimals}
+          requiredAmount={total > 0n ? total : undefined}
+          title="Wallet balances for this send"
         />
-      )}
+        {token.toLowerCase() === defaultToken.toLowerCase() && (
+          <TestTokenFaucet
+            recipient={address}
+            campaignTotal={total}
+            tokenSymbol={tokenSymbol}
+            decimals={decimals}
+          />
+        )}
+      </div>
       <StatusRow complete={true} label="Recipient allocations validated" />
       <StatusRow complete={Boolean(operator.data)} label="Airdrop factory authorization" />
       <StatusRow
@@ -1001,15 +1035,14 @@ function AirdropExecution({
         }
       />
       {error && <ErrorNotice message={error} />}
-      {tokenOpsEncryption.error && <ErrorNotice message={tokenOpsEncryption.error.message} />}
       {progress && <p className="mt-4 text-xs text-mint">{progress}</p>}
       {!operator.data ? (
         <Button className="mt-6 h-12 w-full rounded-2xl" onClick={() => void approve()} disabled={approving || operator.isLoading}>
           {approving ? <><LoaderCircle className="animate-spin" size={16} /> Confirming approval…</> : <><ShieldCheck size={16} /> Approve airdrop factory</>}
         </Button>
       ) : (
-        <Button className="mt-6 h-12 w-full rounded-2xl" onClick={() => void execute()} disabled={issuing || !tokenOpsEncryption.encryptor}>
-          {issuing ? <><LoaderCircle className="animate-spin" size={16} /> Processing authorizations…</> : tokenOpsEncryption.isLoading ? <><LoaderCircle className="animate-spin" size={16} /> Initializing Zama…</> : <><Gift size={16} /> Fund & issue private claims</>}
+        <Button className="mt-6 h-12 w-full rounded-2xl" onClick={() => void execute()} disabled={issuing}>
+          {issuing ? <><LoaderCircle className="animate-spin" size={16} /> Processing authorizations…</> : <><Gift size={16} /> Fund & issue private claims</>}
         </Button>
       )}
       <p className="mt-3 text-center text-[11px] leading-5 text-slate-600">
