@@ -52,8 +52,10 @@ import {
 import { sepolia } from "wagmi/chains";
 import { Button } from "../components/ui/button";
 import { TestTokenFaucet } from "../components/campaign/test-token-faucet";
+import { ConfidentialBalancePanel } from "../components/wallet/confidential-balance-panel";
 import { PrivacyBadge } from "../components/ui/privacy-badge";
 import { campaignQueryKey } from "../hooks/use-campaigns";
+import { confidentialBalanceQueryKey } from "../hooks/use-confidential-balance";
 import { useTokenOpsEncryptor } from "../hooks/use-tokenops-encryptor";
 import { saveCampaign } from "../lib/campaign-repository";
 import {
@@ -403,6 +405,22 @@ export function CreateCampaignFlow() {
         </section>
       )}
 
+      {step >= 1 && step <= 3 && validToken && metadata && address && (
+        <div className="mt-8">
+          <ConfidentialBalancePanel
+            tokenAddress={getAddress(tokenAddress)}
+            tokenSymbol={metadata.symbol}
+            decimals={metadata.decimals}
+            requiredAmount={step >= 2 ? campaignTotal : undefined}
+            title={
+              step >= 2
+                ? "Balances before you send"
+                : "Your distribution token balance"
+            }
+          />
+        </div>
+      )}
+
       {step === 1 && (
         <section className="mt-8 space-y-5 rounded-3xl border border-white/[.07] bg-panel/70 p-6 sm:p-8">
           <Field label="Campaign name">
@@ -696,6 +714,9 @@ function DisperseExecution({
       };
       saveCampaign(campaign);
       await queryClient.invalidateQueries({ queryKey: campaignQueryKey(address) });
+      await queryClient.invalidateQueries({
+        queryKey: confidentialBalanceQueryKey(token, address),
+      });
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Distribution failed.");
     }
@@ -925,9 +946,15 @@ function AirdropExecution({
             : "The airdrop is funded and local claims are safe, but remote delivery failed.",
         );
       }
+      await queryClient.invalidateQueries({
+        queryKey: confidentialBalanceQueryKey(token, address),
+      });
       setResultHash(result.hash);
     } catch (cause) {
       if (confirmed) {
+        await queryClient.invalidateQueries({
+          queryKey: confidentialBalanceQueryKey(token, address),
+        });
         setResultHash(confirmed.hash);
         setDeliveryWarning(
           "The airdrop was funded onchain, but authorization generation was interrupted. Do not fund it again; recover or withdraw the remaining pool from the TokenOps airdrop contract.",

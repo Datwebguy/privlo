@@ -7,13 +7,18 @@ import {
   Radio,
   ShieldCheck,
 } from "lucide-react";
+import { getConfidentialTestTokenAddress } from "@tokenops/sdk";
 import { Link } from "react-router-dom";
 import { formatEther } from "viem";
 import { useAccount, useBalance, useBlockNumber } from "wagmi";
+import { sepolia } from "wagmi/chains";
 import { CampaignCard } from "../components/campaign/campaign-card";
+import { ConfidentialBalancePanel } from "../components/wallet/confidential-balance-panel";
 import { buttonClasses } from "../components/ui/button-classes";
 import { PrivacyBadge } from "../components/ui/privacy-badge";
 import { useCampaigns } from "../hooks/use-campaigns";
+
+const demoTokenAddress = getConfidentialTestTokenAddress(sepolia.id);
 
 export function DashboardWallet() {
   const { address, isConnected } = useAccount();
@@ -42,6 +47,17 @@ export function DashboardWallet() {
           <Plus size={16} /> Create campaign
         </Link>
       </section>
+
+      {isConnected && demoTokenAddress && (
+        <section className="mt-10">
+          <ConfidentialBalancePanel
+            tokenAddress={demoTokenAddress}
+            tokenSymbol="CTTT"
+            decimals={6}
+            title="Your wallet balances"
+          />
+        </section>
+      )}
 
       <section className="mt-10 grid gap-4 md:grid-cols-3">
         <Metric

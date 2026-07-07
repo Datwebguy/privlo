@@ -1,3 +1,4 @@
+import { getConfidentialTestTokenAddress } from "@tokenops/sdk";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useAirdropIsSignatureValid,
@@ -25,7 +26,9 @@ import {
 } from "wagmi";
 import { sepolia } from "wagmi/chains";
 import { Button } from "../components/ui/button";
+import { ConfidentialBalancePanel } from "../components/wallet/confidential-balance-panel";
 import { PrivacyBadge } from "../components/ui/privacy-badge";
+import { confidentialBalanceQueryKey } from "../hooks/use-confidential-balance";
 import { claimsQueryKey, useClaims } from "../hooks/use-claims";
 import { usePrivateClaim } from "../hooks/use-private-claim";
 import {
@@ -36,6 +39,7 @@ import { shortAddress } from "../lib/utils";
 import type { ConfidentialClaim } from "../types/campaign";
 
 const decimalsAbi = parseAbi(["function decimals() view returns (uint8)"]);
+const demoTokenAddress = getConfidentialTestTokenAddress(sepolia.id);
 
 export function MyClaimsFlow() {
   const { isConnected, address } = useAccount();
@@ -81,6 +85,17 @@ export function MyClaimsFlow() {
           </div>
         </div>
       </div>
+
+      {isConnected && demoTokenAddress && (
+        <div className="mt-8">
+          <ConfidentialBalancePanel
+            tokenAddress={demoTokenAddress}
+            tokenSymbol="CTTT"
+            decimals={6}
+            title="Your claimed token balance"
+          />
+        </div>
+      )}
 
       {!isConnected ? (
         <EmptyClaims
@@ -245,6 +260,9 @@ function ClaimCard({
         // Onchain claim succeeded; inbox sync can be retried on refresh.
       }
       await queryClient.invalidateQueries({ queryKey: claimsQueryKey(recipient) });
+      await queryClient.invalidateQueries({
+        queryKey: confidentialBalanceQueryKey(claim.tokenAddress, recipient),
+      });
     } catch (error) {
       setActionError(error instanceof Error ? error.message : "Claim transaction failed.");
     } finally {

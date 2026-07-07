@@ -1,3 +1,4 @@
+import { getConfidentialTestTokenAddress } from "@tokenops/sdk";
 import { useMintConfidential } from "@tokenops/sdk/testnet-faucet/react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Coins, LoaderCircle } from "lucide-react";
@@ -10,6 +11,7 @@ import {
   useWalletClient,
 } from "wagmi";
 import { sepolia } from "wagmi/chains";
+import { confidentialBalanceQueryKey } from "../../hooks/use-confidential-balance";
 import { Button } from "../ui/button";
 
 /** 1,000 CTTT at 6 decimals — sensible starter balance for demos. */
@@ -90,11 +92,17 @@ export function TestTokenFaucet({
     faucet.mutate(
       { amount: mintAmount, to: recipient },
       {
-        onSuccess: () => {
-          void queryClient.invalidateQueries({
-            queryKey: ["tokenops-sdk", "testnet-faucet"],
-          });
-        },
+                onSuccess: () => {
+                  void queryClient.invalidateQueries({
+                    queryKey: ["tokenops-sdk", "testnet-faucet"],
+                  });
+                  void queryClient.invalidateQueries({
+                    queryKey: confidentialBalanceQueryKey(
+                      getConfidentialTestTokenAddress(sepolia.id) ?? undefined,
+                      recipient,
+                    ),
+                  });
+                },
       },
     );
   }
