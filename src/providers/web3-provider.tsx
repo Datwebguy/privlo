@@ -8,13 +8,18 @@ import {
 import { WagmiSigner } from "@zama-fhe/react-sdk/wagmi";
 import { useMemo, useState, type PropsWithChildren } from "react";
 import { sepolia } from "wagmi/chains";
-import { useAccount, WagmiProvider } from "wagmi";
-import { rpcUrl, wagmiConfig } from "../config/chains";
+import { useAccount, WagmiProvider, type Config } from "wagmi";
+import {
+  createPrivloWagmiConfig,
+  rpcUrl,
+} from "../config/create-wagmi-config";
+import { WagmiConfigContext, useWagmiConfig } from "./wagmi-config-context";
 
 function ZamaGate({ children }: PropsWithChildren) {
   const { isConnected } = useAccount();
+  const config = useWagmiConfig();
   const zama = useMemo(() => {
-    const signer = new WagmiSigner({ config: wagmiConfig });
+    const signer = new WagmiSigner({ config });
     const relayer = new RelayerWeb({
       getChainId: () => Promise.resolve(sepolia.id),
       transports: {
@@ -27,7 +32,7 @@ function ZamaGate({ children }: PropsWithChildren) {
       },
     });
     return { signer, relayer };
-  }, []);
+  }, [config]);
 
   if (!isConnected) return children;
 
@@ -52,12 +57,15 @@ export function Web3Provider({ children }: PropsWithChildren) {
         },
       }),
   );
+  const [config] = useState<Config>(() => createPrivloWagmiConfig());
 
   return (
-    <WagmiProvider config={wagmiConfig} reconnectOnMount={false}>
-      <QueryClientProvider client={queryClient}>
-        <ZamaGate>{children}</ZamaGate>
-      </QueryClientProvider>
-    </WagmiProvider>
+    <WagmiConfigContext.Provider value={config}>
+      <WagmiProvider config={config} reconnectOnMount={false}>
+        <QueryClientProvider client={queryClient}>
+          <ZamaGate>{children}</ZamaGate>
+        </QueryClientProvider>
+      </WagmiProvider>
+    </WagmiConfigContext.Provider>
   );
 }

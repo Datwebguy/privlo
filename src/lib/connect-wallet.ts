@@ -1,31 +1,20 @@
+import type { Config } from "wagmi";
 import { connect } from "wagmi/actions";
-import { injected } from "wagmi/connectors";
 import type { Connector } from "wagmi";
-import { wagmiConfig } from "../config/chains";
 import type { DiscoveredWallet } from "../hooks/use-wallet-discovery";
+import { prepareDiscoveredConnector } from "./wallet-connectors";
 
-export async function connectDiscoveredWallet(wallet: DiscoveredWallet) {
-  const existing = wagmiConfig.connectors.find(
-    (connector) => connector.id === wallet.id,
-  );
-  if (existing) {
-    return connect(wagmiConfig, { connector: existing });
-  }
-
-  const connector = wagmiConfig._internal.connectors.setup(
-    injected({
-      target: {
-        id: wallet.id,
-        name: wallet.name,
-        icon: wallet.icon,
-        provider: wallet.provider,
-      },
-    }),
-  );
-
-  return connect(wagmiConfig, { connector });
+export async function connectDiscoveredWallet(
+  config: Config,
+  wallet: DiscoveredWallet,
+) {
+  const connector = prepareDiscoveredConnector(config, wallet);
+  return connect(config, { connector });
 }
 
-export async function connectWithConnector(connector: Connector) {
-  return connect(wagmiConfig, { connector });
+export async function connectWithConnector(
+  config: Config,
+  connector: Connector,
+) {
+  return connect(config, { connector });
 }

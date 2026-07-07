@@ -23,6 +23,8 @@ import {
 import { sepolia } from "wagmi/chains";
 import { useWalletDiscovery } from "../../hooks/use-wallet-discovery";
 import { connectDiscoveredWallet, connectWithConnector } from "../../lib/connect-wallet";
+import { prepareWalletPicker } from "../../lib/wallet-connectors";
+import { useWagmiConfig } from "../../providers/wagmi-config-context";
 import { shortAddress } from "../../lib/utils";
 import { Button } from "../ui/button";
 
@@ -62,6 +64,7 @@ export function ConnectButton() {
   const [uiError, setUiError] = useState<string>();
   const { address, isConnected, connector } = useAccount();
   const chainId = useChainId();
+  const wagmiConfig = useWagmiConfig();
   const { connectors, reset: resetConnect } = useConnect();
   const { disconnect } = useDisconnect();
   const {
@@ -86,6 +89,11 @@ export function ConnectButton() {
     const timeout = window.setTimeout(() => setCopied(false), 1_600);
     return () => window.clearTimeout(timeout);
   }, [copied]);
+
+  useEffect(() => {
+    if (!pickerOpen) return;
+    prepareWalletPicker(wagmiConfig);
+  }, [pickerOpen, wagmiConfig]);
 
   useEffect(() => {
     if (!pickerOpen && !accountMenuOpen) return;
@@ -121,7 +129,7 @@ export function ConnectButton() {
     clearError();
     setIsConnecting(true);
     try {
-      await connectWithConnector(connector);
+      await connectWithConnector(wagmiConfig, connector);
       setPickerOpen(false);
     } catch (cause) {
       setUiError(
@@ -138,7 +146,7 @@ export function ConnectButton() {
     clearError();
     setIsConnecting(true);
     try {
-      await connectDiscoveredWallet(wallet);
+      await connectDiscoveredWallet(wagmiConfig, wallet);
       setPickerOpen(false);
     } catch (cause) {
       setUiError(

@@ -1,16 +1,37 @@
+import { lazy, Suspense } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
-import { AppShell } from "./components/layout/app-shell";
-import { CreateCampaign } from "./pages/create-campaign";
-import { Dashboard } from "./pages/dashboard";
 import { Landing } from "./pages/landing";
-import { MyClaims } from "./pages/my-claims";
-import { Web3Provider } from "./providers/web3-provider";
 
-function ProtectedAppShell() {
+const ProtectedAppShell = lazy(() =>
+  import("./protected-app-shell").then((module) => ({
+    default: module.ProtectedAppShell,
+  })),
+);
+const Dashboard = lazy(() =>
+  import("./pages/dashboard").then((module) => ({ default: module.Dashboard })),
+);
+const CreateCampaign = lazy(() =>
+  import("./pages/create-campaign").then((module) => ({
+    default: module.CreateCampaign,
+  })),
+);
+const MyClaims = lazy(() =>
+  import("./pages/my-claims").then((module) => ({ default: module.MyClaims })),
+);
+
+function AppRouteFallback() {
   return (
-    <Web3Provider>
-      <AppShell />
-    </Web3Provider>
+    <div className="grid min-h-screen place-items-center bg-ink text-sm text-slate-500">
+      Loading Privlo app…
+    </div>
+  );
+}
+
+function PageFallback() {
+  return (
+    <div className="grid min-h-64 place-items-center text-sm text-slate-500">
+      Loading…
+    </div>
   );
 }
 
@@ -18,10 +39,37 @@ export function App() {
   return (
     <Routes>
       <Route index element={<Landing />} />
-      <Route element={<ProtectedAppShell />}>
-        <Route path="app" element={<Dashboard />} />
-        <Route path="app/campaigns/new" element={<CreateCampaign />} />
-        <Route path="app/claims" element={<MyClaims />} />
+      <Route
+        element={
+          <Suspense fallback={<AppRouteFallback />}>
+            <ProtectedAppShell />
+          </Suspense>
+        }
+      >
+        <Route
+          path="app"
+          element={
+            <Suspense fallback={<PageFallback />}>
+              <Dashboard />
+            </Suspense>
+          }
+        />
+        <Route
+          path="app/campaigns/new"
+          element={
+            <Suspense fallback={<PageFallback />}>
+              <CreateCampaign />
+            </Suspense>
+          }
+        />
+        <Route
+          path="app/claims"
+          element={
+            <Suspense fallback={<PageFallback />}>
+              <MyClaims />
+            </Suspense>
+          }
+        />
       </Route>
       <Route path="*" element={<Navigate replace to="/" />} />
     </Routes>
