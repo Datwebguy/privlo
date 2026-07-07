@@ -4,7 +4,8 @@ import { Logo } from "../brand/logo";
 import { GITHUB_REPO, landingDocs } from "../../lib/landing-links";
 
 const productLinks = [
-  { label: "Dashboard", to: "/app" },
+  { label: "Registry", to: "/app" },
+  { label: "Campaigns", to: "/app/campaigns" },
   { label: "Create campaign", to: "/app/campaigns/new" },
   { label: "My claims", to: "/app/claims" },
 ] as const;
@@ -29,8 +30,9 @@ export function LandingFooter() {
             </Link>
             <p className="mt-5 max-w-sm text-sm leading-7 text-slate-500">
               <span className="font-semibold text-slate-300">Privlo</span> —
-              private financial flows onchain. Encrypted payroll, distributions,
-              and claims powered by Zama FHE and TokenOps.
+              browse the Zama Wrappers Registry on Sepolia, wrap and unwrap
+              ERC-7984 pairs, and decrypt balances — plus confidential
+              distributions powered by TokenOps.
             </p>
             <a
               href={GITHUB_REPO}

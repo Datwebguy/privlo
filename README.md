@@ -4,24 +4,25 @@
   <br />
 
   <p>
-    <strong>Confidential payroll, investor distributions, airdrops, and claims - encrypted onchain.</strong>
+    <strong>Production dApp for the Zama Confidential Wrapper Registry on Sepolia.</strong>
   </p>
 
   <p>
-    Privlo gives teams a familiar distribution workflow while Zama FHE keeps every allocation private
-    and TokenOps handles the confidential onchain execution.
+    Browse onchain ERC-20 ↔ ERC-7984 pairs, mint official cTokenMocks, wrap and unwrap balances,
+    and decrypt any confidential token with EIP-712 user authorization — plus optional confidential
+    distributions via TokenOps.
   </p>
 
   <p>
-    <a href="#quick-start"><strong>Run locally</strong></a>
+    <a href="https://privlo.vercel.app/app"><strong>Live app</strong></a>
     &nbsp;&middot;&nbsp;
-    <a href="#claim-inbox-api"><strong>Claim inbox API</strong></a>
+    <a href="#wrappers-registry-bounty"><strong>Registry bounty</strong></a>
+    &nbsp;&middot;&nbsp;
+    <a href="#quick-start"><strong>Run locally</strong></a>
     &nbsp;&middot;&nbsp;
     <a href="#how-to-use-privlo"><strong>How to use</strong></a>
     &nbsp;&middot;&nbsp;
     <a href="./docs/protocol-integration.md"><strong>Protocol notes</strong></a>
-    &nbsp;&middot;&nbsp;
-    <a href="./docs/video-pitch.md"><strong>Pitch script</strong></a>
   </p>
 
   <p>
@@ -34,6 +35,57 @@
 </div>
 
 ---
+
+## Wrappers Registry bounty
+
+**Live:** [https://privlo.vercel.app/app](https://privlo.vercel.app/app) · **Network:** Sepolia · **Source:** [github.com/Datwebguy/privlo](https://github.com/Datwebguy/privlo)
+
+Privlo is a production-ready client for the [Zama Confidential Wrapper Registry](https://docs.zama.org/protocol/protocol-apps/addresses/testnet/sepolia.md). It satisfies the bounty requirements:
+
+| Requirement | Implementation |
+| --- | --- |
+| Browse onchain registry pairs | `useListPairs({ metadata: true })` on Sepolia registry |
+| Wrap / unwrap every pair | `useShield` / `useUnshield` per selected pair |
+| EIP-712 decrypt any ERC-7984 | `ConfidentialBalancePanel` + arbitrary token panel |
+| Official cTokenMock faucet | `MockFaucetPanel` calls underlying `mint()` on mock pairs |
+| Local pair configuration | [`src/config/wrapper-pairs.local.ts`](src/config/wrapper-pairs.local.ts) merged at runtime |
+
+### Registry contract
+
+| Contract | Sepolia address |
+| --- | --- |
+| Wrappers Registry | [`0x2f0750Bbb0A246059d80e94c454586a7F27a128e`](https://sepolia.etherscan.io/address/0x2f0750Bbb0A246059d80e94c454586a7F27a128e) |
+
+Pairs are loaded from this onchain registry first. Privlo does not hardcode the official mock list — it reads whatever the registry returns (cUSDC, cUSDT, cWETH, cBRON, cZAMA, ctGBP, cXAUt, and future entries).
+
+### Add a custom pair locally
+
+Edit [`src/config/wrapper-pairs.local.ts`](src/config/wrapper-pairs.local.ts) and append a pair (onchain entries with the same confidential address take precedence):
+
+```ts
+export const localWrapperPairs: LocalWrapperPair[] = [
+  {
+    tokenAddress: "0xYourErc20",
+    confidentialTokenAddress: "0xYourErc7984",
+    label: "My dev pair",
+    faucetEnabled: true, // show mint faucet when underlying exposes mint()
+  },
+];
+```
+
+Restart the dev server or redeploy. The Registry page at `/app` picks up local pairs automatically.
+
+### Registry workflow
+
+1. Connect an injected wallet and switch to **Sepolia**.
+2. Open **Registry** (`/app`) — pairs load from the onchain registry (+ any local pairs).
+3. On mock pairs, use **Mint starter** to claim underlying tokens from the public `mint()` faucet.
+4. **Wrap** ERC-20 into the confidential ERC-7984 token.
+5. **Reveal** your encrypted balance (EIP-712 Zama user decryption).
+6. **Unwrap** back to ERC-20 when needed.
+7. Paste any ERC-7984 address in **Decrypt any balance** to decrypt outside the pair list.
+
+Confidential payroll / airdrop campaigns (`/app/campaigns`) are a bonus workflow built on TokenOps, not required for registry judging.
 
 ## About Privlo
 
@@ -110,6 +162,11 @@ flowchart LR
 
 | Capability | Status | Notes |
 | --- | :---: | --- |
+| Wrappers Registry browser | Ready | Onchain `useListPairs` + local pair merge |
+| Wrap / unwrap (shield / unshield) | Ready | Per-pair `useShield` / `useUnshield` on Sepolia |
+| EIP-712 confidential balance reveal | Ready | ACL grant + `useUserDecrypt` for any ERC-7984 |
+| cTokenMock underlying faucet | Ready | Public `mint()` on official mock pairs |
+| Local wrapper pair config | Ready | `wrapper-pairs.local.ts` documented in README |
 | Wallet connection and network switching | Ready | Injected wallets, Sepolia enforcement, actionable errors |
 | Manual recipient entry | Ready | Address, amount, duplicate, and decimal validation |
 | CSV recipient import | Ready | Reviewable before encryption or submission |
@@ -186,9 +243,18 @@ setup.
 
 ## How to use Privlo
 
+### Use the Wrappers Registry
+
+1. Open [`/app`](https://privlo.vercel.app/app) and connect your wallet.
+2. Switch to Sepolia when prompted.
+3. Select a registry pair (or add one in `wrapper-pairs.local.ts`).
+4. Mint mock underlying tokens when the faucet panel is shown.
+5. Wrap, reveal your confidential balance, and unwrap as needed.
+6. Paste any ERC-7984 address in the arbitrary decrypt panel.
+
 ### Create a confidential distribution
 
-1. Open `/app` and connect the creator wallet.
+1. Open `/app/campaigns` and connect the creator wallet.
 2. Switch to Sepolia when prompted.
 3. Select **Create campaign**.
 4. Choose **Disperse** for immediate transfers or **Airdrop** for recipient claims.
@@ -399,7 +465,9 @@ Implementation: [`src/lib/claim-messages.ts`](src/lib/claim-messages.ts),
 | Route | Experience |
 | --- | --- |
 | `/` | Product landing page |
-| `/app` | Wallet-scoped creator dashboard |
+| `/app` | Wrappers Registry — browse, wrap, unwrap, decrypt |
+| `/app/registry` | Alias for the registry experience |
+| `/app/campaigns` | Wallet-scoped creator dashboard (TokenOps bonus) |
 | `/app/campaigns/new` | Confidential campaign wizard |
 | `/app/claims` | Private recipient reveal and claim |
 
@@ -479,13 +547,14 @@ public production launch still benefits from a dedicated RPC provider and monito
 
 Privlo targets:
 
-- **TokenOps Special Bounty:** confidential Disperse and Airdrop flows built on TokenOps'
-  pre-deployed Sepolia contracts.
-- **Builder Track:** a real-world confidential finance product with wallet-native UX and
-  recipient-controlled private reveal.
+- **Confidential Wrapper Registry bounty:** browse onchain pairs, wrap/unwrap, EIP-712 decrypt,
+  cTokenMock faucet, and documented local pair configuration.
+- **TokenOps Special Bounty (bonus):** confidential Disperse and Airdrop flows on pre-deployed
+  Sepolia contracts.
+- **Builder Track:** wallet-native UX for confidential finance with recipient-controlled reveal.
 
 The project demonstrates end-to-end encryption, programmable confidentiality, EVM composability,
-and a practical financial workflow rather than a privacy-only technical demo.
+and practical workflows beyond a privacy-only technical demo.
 
 ## Documentation
 

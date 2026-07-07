@@ -1,4 +1,10 @@
-import { CircleHelp, FilePlus2, LayoutGrid, ReceiptText } from "lucide-react";
+import {
+  CircleHelp,
+  FilePlus2,
+  LayoutGrid,
+  ReceiptText,
+  Shield,
+} from "lucide-react";
 import { NavLink, Outlet } from "react-router-dom";
 import { Logo } from "../brand/logo";
 import { PrivacyNetworkBackground } from "../effects/privacy-network-background";
@@ -6,7 +12,8 @@ import { cn } from "../../lib/utils";
 import { ConnectButton } from "../wallet/connect-button";
 
 const navigation = [
-  { to: "/app", label: "Dashboard", icon: LayoutGrid, end: true },
+  { to: "/app", label: "Registry", icon: Shield, end: true },
+  { to: "/app/campaigns", label: "Campaigns", icon: LayoutGrid },
   { to: "/app/campaigns/new", label: "Create", icon: FilePlus2 },
   { to: "/app/claims", label: "My claims", icon: ReceiptText },
 ];

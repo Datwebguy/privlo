@@ -152,10 +152,19 @@ export function ConfidentialBalancePanel({
             variant="secondary"
             className="mt-4 h-9 rounded-xl text-xs"
             disabled={balance.isRevealing || wrongNetwork}
-            onClick={balance.reveal}
+            onClick={() => void balance.reveal()}
           >
-            <Eye size={14} />
-            Reveal my {balance.symbol} balance
+            {balance.isRevealing ? (
+              <>
+                <LoaderCircle size={14} className="animate-spin" />
+                Authorizing…
+              </>
+            ) : (
+              <>
+                <Eye size={14} />
+                Reveal my {balance.symbol} balance
+              </>
+            )}
           </Button>
         )}
 

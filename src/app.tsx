@@ -18,6 +18,9 @@ const CreateCampaign = lazy(() =>
 const MyClaims = lazy(() =>
   import("./pages/my-claims").then((module) => ({ default: module.MyClaims })),
 );
+const Registry = lazy(() =>
+  import("./pages/registry").then((module) => ({ default: module.Registry })),
+);
 
 function AppRouteFallback() {
   return (
@@ -50,7 +53,23 @@ export function App() {
           path="app"
           element={
             <Suspense fallback={<PageFallback />}>
+              <Registry />
+            </Suspense>
+          }
+        />
+        <Route
+          path="app/campaigns"
+          element={
+            <Suspense fallback={<PageFallback />}>
               <Dashboard />
+            </Suspense>
+          }
+        />
+        <Route
+          path="app/registry"
+          element={
+            <Suspense fallback={<PageFallback />}>
+              <Registry />
             </Suspense>
           }
         />

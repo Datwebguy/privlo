@@ -335,10 +335,10 @@ export function CreateCampaignFlow() {
   return (
     <div className="mx-auto max-w-4xl">
       <Link
-        to="/app"
+        to="/app/campaigns"
         className="mb-8 inline-flex items-center gap-2 text-sm text-slate-500 hover:text-white"
       >
-        <ArrowLeft size={15} /> Back to dashboard
+        <ArrowLeft size={15} /> Back to campaigns
       </Link>
 
       <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
@@ -737,7 +737,7 @@ function DisperseExecution({
 
   if (!address) return <ExecutionNotice message="Connect a Sepolia wallet to continue." />;
   if (disperse.data) {
-    return <ExecutionSuccess hash={disperse.data.hash} onDone={() => navigate("/app")} />;
+    return <ExecutionSuccess hash={disperse.data.hash} onDone={() => navigate("/app/campaigns")} />;
   }
 
   const needsApproval = preflight.data?.hasApprovedSingleton === false;
@@ -1000,7 +1000,7 @@ function AirdropExecution({
       <ExecutionSuccess
         hash={resultHash}
         warning={deliveryWarning}
-        onDone={() => navigate("/app")}
+        onDone={() => navigate("/app/campaigns")}
       />
     );
   }

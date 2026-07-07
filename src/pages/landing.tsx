@@ -36,14 +36,14 @@ const navLinks = [
 ] as const;
 
 const marqueeItems = [
+  "Wrappers Registry",
   "Zama FHE",
-  "TokenOps",
   "ERC-7984",
+  "Wrap & unwrap",
+  "EIP-712 decrypt",
   "Sepolia",
+  "TokenOps",
   "Confidential airdrops",
-  "Private payroll",
-  "Encrypted vesting",
-  "Recipient-only reveal",
 ] as const;
 
 export function Landing() {
@@ -110,44 +110,44 @@ export function Landing() {
             <ScrollReveal variant="fade" delay={0}>
               <div className="inline-flex items-center gap-2 rounded-full border border-white/[.08] bg-white/[.035] px-3 py-1.5 text-xs text-slate-400 backdrop-blur">
                 <Sparkles size={13} className="text-mint" />
-                Confidential finance on Sepolia · Zama + TokenOps
+                Zama Wrappers Registry · Sepolia testnet
               </div>
             </ScrollReveal>
 
             <ScrollReveal delay={80}>
               <h1 className="mx-auto mt-8 max-w-4xl font-display text-[46px] font-semibold leading-[.98] tracking-[-.065em] sm:text-7xl lg:text-[88px]">
-                Pay teams.
-                <span className="hero-gradient block">Hide the numbers.</span>
+                Wrap tokens.
+                <span className="hero-gradient block">Reveal on your terms.</span>
               </h1>
             </ScrollReveal>
 
             <ScrollReveal delay={160}>
               <p className="mx-auto mt-7 max-w-2xl text-base leading-8 text-slate-400 sm:text-lg">
-                Privlo is the private distribution layer for onchain
-                organizations—encrypted payroll, investor payouts, airdrops, and
-                vesting from one focused workflow.
+                Browse official Sepolia wrapper pairs from the onchain registry,
+                mint mock underlying tokens, wrap and unwrap ERC-7984 balances,
+                and decrypt any confidential token with EIP-712 authorization.
               </p>
             </ScrollReveal>
 
             <ScrollReveal delay={240}>
               <div className="mt-9 flex flex-col justify-center gap-3 sm:flex-row">
                 <Link
-                  to="/app/campaigns/new"
+                  to="/app"
                   className={buttonClasses(
                     "primary",
                     "h-12 w-full rounded-full px-6 sm:w-auto",
                   )}
                 >
-                  Create private campaign <ArrowRight size={16} />
+                  Open registry <ArrowRight size={16} />
                 </Link>
                 <Link
-                  to="/app/claims"
+                  to="/app/campaigns/new"
                   className={buttonClasses(
                     "secondary",
                     "h-12 w-full rounded-full px-6 sm:w-auto",
                   )}
                 >
-                  View my claims
+                  Create distribution
                 </Link>
               </div>
             </ScrollReveal>
@@ -439,12 +439,12 @@ export function Landing() {
           <ScrollReveal variant="scale">
             <div className="cta-panel relative mx-auto max-w-[1180px] overflow-hidden rounded-[32px] border border-mint/10 px-6 py-20 text-center sm:px-12">
               <h2 className="relative font-display text-4xl font-semibold tracking-[-.05em] sm:text-6xl">
-                Ready to move privately?
+                Ready to try confidential tokens?
               </h2>
               <p className="relative mx-auto mt-5 max-w-xl text-slate-400">
-                Launch a confidential financial flow on Sepolia in minutes. Read
-                the docs, connect when you&apos;re ready, and ship without
-                exposing amounts.
+                Connect on Sepolia, browse wrapper pairs, mint mocks, wrap
+                balances, and reveal only what you authorize — all from one
+                open-source app.
               </p>
               <div className="relative mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
                 <Link

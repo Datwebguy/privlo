@@ -2,6 +2,7 @@ export const GITHUB_REPO = "https://github.com/Datwebguy/privlo";
 
 export const landingDocs = {
   readme: `${GITHUB_REPO}#readme`,
+  registryBounty: `${GITHUB_REPO}#wrappers-registry-bounty`,
   howToUse: `${GITHUB_REPO}#how-to-use-privlo`,
   quickStart: `${GITHUB_REPO}#quick-start`,
   claimInbox: `${GITHUB_REPO}#claim-inbox-api`,

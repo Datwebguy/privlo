@@ -1,8 +1,9 @@
-import { useUserDecrypt } from "@zama-fhe/react-sdk";
+import { useAllow, useUserDecrypt } from "@zama-fhe/react-sdk";
 import { useCallback, useState } from "react";
 import { parseAbi, type Address, type Hex } from "viem";
 import { useAccount, useReadContract } from "wagmi";
 import { sepolia } from "wagmi/chains";
+import { formatZamaError } from "../lib/zama-errors";
 
 export const confidentialBalanceAbi = parseAbi([
   "function confidentialBalanceOf(address account) view returns (bytes32)",
@@ -40,6 +41,7 @@ export function useConfidentialBalance({
 }) {
   const { address } = useAccount();
   const enabled = Boolean(tokenAddress && address);
+  const allow = useAllow();
 
   const balanceQuery = useReadContract({
     address: tokenAddress,
@@ -70,13 +72,15 @@ export function useConfidentialBalance({
   });
 
   const [revealRequested, setRevealRequested] = useState(false);
+  const [revealError, setRevealError] = useState<Error>();
   const handle = balanceQuery.data;
   const zeroBalance = isZeroHandle(handle);
+
   const decrypt = useUserDecrypt(
     {
       handles:
-        revealRequested && handle && !zeroBalance
-          ? [{ handle, contractAddress: tokenAddress! }]
+        revealRequested && handle && !zeroBalance && tokenAddress
+          ? [{ handle, contractAddress: tokenAddress }]
           : [],
     },
     { enabled: revealRequested && Boolean(handle) && !zeroBalance },
@@ -90,13 +94,31 @@ export function useConfidentialBalance({
       ? decryptedValue
       : undefined;
 
-  const reveal = useCallback(() => {
-    setRevealRequested(true);
-  }, []);
+  const reveal = useCallback(async () => {
+    if (!tokenAddress) return;
+    setRevealError(undefined);
+    try {
+      await allow.mutateAsync([tokenAddress]);
+      setRevealRequested(true);
+    } catch (cause) {
+      const error =
+        cause instanceof Error
+          ? cause
+          : new Error("Could not authorize balance decryption.");
+      setRevealError(error);
+      throw error;
+    }
+  }, [allow, tokenAddress]);
 
   const resetReveal = useCallback(() => {
     setRevealRequested(false);
+    setRevealError(undefined);
   }, []);
+
+  const operationError = revealError ?? decrypt.error;
+  const friendlyError = operationError
+    ? new Error(formatZamaError(operationError), { cause: operationError })
+    : undefined;
 
   return {
     address,
@@ -106,11 +128,12 @@ export function useConfidentialBalance({
     decimals: decimalsOverride ?? decimalsQuery.data,
     symbol: tokenSymbol ?? symbolQuery.data ?? "tokens",
     isLoading: balanceQuery.isLoading,
-    isRevealing: decrypt.isFetching || decrypt.isLoading,
+    isRevealing:
+      allow.isPending || decrypt.isFetching || decrypt.isLoading,
     revealRequested,
     reveal,
     resetReveal,
     refetch: balanceQuery.refetch,
-    error: balanceQuery.error ?? decrypt.error,
+    error: balanceQuery.error ?? friendlyError,
   };
 }

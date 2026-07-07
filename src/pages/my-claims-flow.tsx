@@ -4,7 +4,7 @@ import {
   useAirdropIsSignatureValid,
   useAirdropToken,
 } from "@tokenops/sdk/fhe-airdrop/react";
-import { useUserDecrypt } from "@zama-fhe/react-sdk";
+import { useAllow, useUserDecrypt } from "@zama-fhe/react-sdk";
 import {
   ArrowUpRight,
   Check,
@@ -36,6 +36,7 @@ import {
   type SignMessageFn,
 } from "../lib/claim-repository";
 import { shortAddress } from "../lib/utils";
+import { formatZamaError } from "../lib/zama-errors";
 import type { ConfidentialClaim } from "../types/campaign";
 
 const decimalsAbi = parseAbi(["function decimals() view returns (uint8)"]);
@@ -186,6 +187,7 @@ function ClaimCard({
     signature: claim.signature,
     caller: recipient,
   });
+  const allow = useAllow();
   const decrypt = useUserDecrypt(
     {
       handles: privateClaim.revealedHandle
@@ -226,13 +228,17 @@ function ClaimCard({
   async function reveal() {
     setActionError(undefined);
     try {
-      if (privateClaim.revealedHandle) {
-        await decrypt.refetch();
-      } else {
+      if (!privateClaim.revealedHandle) {
         await privateClaim.reveal();
       }
+      await allow.mutateAsync([claim.airdropAddress]);
+      await decrypt.refetch();
     } catch (error) {
-      setActionError(error instanceof Error ? error.message : "Private reveal failed.");
+      setActionError(
+        error instanceof Error
+          ? formatZamaError(error)
+          : "Private reveal failed.",
+      );
     }
   }
 
@@ -296,7 +302,8 @@ function ClaimCard({
     );
   }
 
-  const revealBusy = privateClaim.isRevealing || decrypt.isLoading;
+  const revealBusy =
+    privateClaim.isRevealing || allow.isPending || decrypt.isLoading;
   return (
     <article className="rounded-3xl border border-white/[.075] bg-panel/75 p-5 sm:p-6">
       <div className="flex items-start justify-between gap-4">

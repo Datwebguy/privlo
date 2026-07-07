@@ -16,10 +16,11 @@ import { WagmiConfigContext, useWagmiConfig } from "./wagmi-config-context";
 
 function ZamaConnected({ children }: PropsWithChildren) {
   const config = useWagmiConfig();
+  const { address } = useAccount();
   const zama = useMemo(() => {
     const signer = new WagmiSigner({ config });
     const relayer = new RelayerWeb({
-      getChainId: () => Promise.resolve(sepolia.id),
+      getChainId: () => signer.getChainId(),
       transports: {
         [sepolia.id]: {
           ...SepoliaConfig,
@@ -34,6 +35,7 @@ function ZamaConnected({ children }: PropsWithChildren) {
 
   return (
     <ZamaProvider
+      key={address ?? "disconnected"}
       relayer={zama.relayer}
       signer={zama.signer}
       storage={indexedDBStorage}
