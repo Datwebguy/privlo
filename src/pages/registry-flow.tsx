@@ -13,9 +13,6 @@ import { shortAddress } from "../lib/utils";
 
 export function RegistryFlow() {
   const { isConnected } = useAccount();
-  const registry = useMergedRegistryPairs();
-  const [selectedIndex, setSelectedIndex] = useState(0);
-  const selected = registry.pairs[selectedIndex];
 
   if (!isConnected) {
     return (
@@ -25,6 +22,14 @@ export function RegistryFlow() {
       />
     );
   }
+
+  return <RegistryConnected />;
+}
+
+function RegistryConnected() {
+  const registry = useMergedRegistryPairs();
+  const [selectedIndex, setSelectedIndex] = useState(0);
+  const selected = registry.pairs[selectedIndex];
 
   return (
     <div className="mx-auto max-w-6xl">

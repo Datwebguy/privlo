@@ -5,7 +5,7 @@ import {
   ZamaProvider,
 } from "@zama-fhe/react-sdk";
 import { WagmiSigner } from "@zama-fhe/react-sdk/wagmi";
-import { useEffect, useMemo, useState, type PropsWithChildren } from "react";
+import { useMemo, useState, type PropsWithChildren } from "react";
 import { sepolia } from "wagmi/chains";
 import { useAccount, WagmiProvider, type Config } from "wagmi";
 import { createPrivloWagmiConfig } from "../config/create-wagmi-config";
@@ -27,20 +27,20 @@ function ZamaConnected({ children }: PropsWithChildren) {
         },
       },
     });
-    return { signer, relayer };
+    return { signer, relayer, address };
   }, [config, address]);
 
-  useEffect(() => {
-    const instance = zama?.relayer;
-    return () => {
-      instance?.terminate();
-    };
-  }, [zama?.relayer]);
-
-  if (!zama) return children;
+  if (!zama) {
+    return (
+      <div className="grid min-h-64 place-items-center text-sm text-slate-500">
+        Preparing confidential session…
+      </div>
+    );
+  }
 
   return (
     <ZamaProvider
+      key={zama.address}
       relayer={zama.relayer}
       signer={zama.signer}
       storage={indexedDBStorage}

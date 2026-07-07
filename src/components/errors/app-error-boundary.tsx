@@ -36,6 +36,11 @@ export class AppErrorBoundary extends Component<Props, State> {
             No transaction was submitted by this screen. Reload the application
             and reconnect your wallet to continue.
           </p>
+          {import.meta.env.DEV && this.state.error && (
+            <p className="mt-4 break-all rounded-xl border border-rose-400/20 bg-rose-400/[.04] p-3 text-left font-mono text-[11px] leading-5 text-rose-200">
+              {this.state.error.message}
+            </p>
+          )}
           <Button
             className="mt-7"
             onClick={() => window.location.reload()}
