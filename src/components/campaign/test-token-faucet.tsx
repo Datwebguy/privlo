@@ -3,10 +3,23 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Coins, LoaderCircle } from "lucide-react";
 import type { Address } from "viem";
 import { formatUnits } from "viem";
+import { useAccount, useWalletClient } from "wagmi";
+import { sepolia } from "wagmi/chains";
 import { Button } from "../ui/button";
 
 /** 1,000 CTTT at 6 decimals — sensible starter balance for demos. */
 const STARTER_MINT_AMOUNT = 1_000_000_000n;
+
+function friendlyMintError(error: Error) {
+  const message = error.message.toLowerCase();
+  if (message.includes("walletclient is required")) {
+    return "Wallet is still preparing. Stay on Sepolia, wait a moment, and try again.";
+  }
+  if (message.includes("rejected") || message.includes("denied")) {
+    return "Mint was rejected in your wallet.";
+  }
+  return error.message.split("\n")[0] || "Mint failed.";
+}
 
 export function TestTokenFaucet({
   recipient,
@@ -20,13 +33,21 @@ export function TestTokenFaucet({
   decimals?: number;
 }) {
   const queryClient = useQueryClient();
-  const faucet = useMintConfidential();
+  const { chainId, isConnected } = useAccount();
+  const walletClientQuery = useWalletClient({ chainId: sepolia.id });
+  const walletClient = walletClientQuery.data;
+  const faucet = useMintConfidential({ chainId: sepolia.id });
   const mintAmount =
     campaignTotal > 0n ? campaignTotal : STARTER_MINT_AMOUNT;
   const mintLabel =
     campaignTotal > 0n
       ? `Mint ${formatUnits(campaignTotal, decimals)} ${tokenSymbol}`
       : `Mint starter ${tokenSymbol}`;
+  const wrongNetwork = isConnected && chainId !== sepolia.id;
+  const walletPending = isConnected && !walletClient && walletClientQuery.isLoading;
+  const walletUnavailable = isConnected && !walletClient && !walletClientQuery.isLoading;
+  const mintDisabled =
+    faucet.isPending || wrongNetwork || walletPending || walletUnavailable;
 
   return (
     <div className="rounded-2xl border border-cyan-400/15 bg-cyan-400/[.04] p-5">
@@ -60,10 +81,11 @@ export function TestTokenFaucet({
         <Button
           variant="secondary"
           className="h-10 shrink-0 rounded-xl px-4 text-xs"
-          disabled={faucet.isPending}
-          onClick={() =>
+          disabled={mintDisabled}
+          onClick={() => {
+            if (!walletClient) return;
             faucet.mutate(
-              { amount: mintAmount, to: recipient, account: recipient },
+              { amount: mintAmount, to: recipient },
               {
                 onSuccess: () => {
                   void queryClient.invalidateQueries({
@@ -71,10 +93,17 @@ export function TestTokenFaucet({
                   });
                 },
               },
-            )
-          }
+            );
+          }}
         >
-          {faucet.isPending ? (
+          {wrongNetwork ? (
+            "Switch to Sepolia"
+          ) : walletPending ? (
+            <>
+              <LoaderCircle className="animate-spin" size={14} />
+              Preparing wallet…
+            </>
+          ) : faucet.isPending ? (
             <>
               <LoaderCircle className="animate-spin" size={14} />
               Minting…
@@ -86,8 +115,21 @@ export function TestTokenFaucet({
           )}
         </Button>
       </div>
+      {wrongNetwork && (
+        <p className="mt-3 text-xs text-amber-200/80">
+          Switch your wallet to Sepolia before minting test tokens.
+        </p>
+      )}
+      {walletUnavailable && (
+        <p className="mt-3 text-xs text-amber-200/80">
+          Wallet connection is not ready for writes yet. Refresh the page or
+          reconnect your wallet, then try again.
+        </p>
+      )}
       {faucet.error && (
-        <p className="mt-3 text-xs text-rose-300">{faucet.error.message}</p>
+        <p className="mt-3 text-xs text-rose-300">
+          {friendlyMintError(faucet.error)}
+        </p>
       )}
     </div>
   );
