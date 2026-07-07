@@ -14,7 +14,7 @@ import {
   useDisperse,
   usePreflightDisperse,
 } from "@tokenops/sdk/fhe-disperse/react";
-import { useMintConfidential } from "@tokenops/sdk/testnet-faucet/react";
+
 import {
   AlertCircle,
   ArrowLeft,
@@ -51,6 +51,7 @@ import {
 } from "wagmi";
 import { sepolia } from "wagmi/chains";
 import { Button } from "../components/ui/button";
+import { TestTokenFaucet } from "../components/campaign/test-token-faucet";
 import { PrivacyBadge } from "../components/ui/privacy-badge";
 import { campaignQueryKey } from "../hooks/use-campaigns";
 import { useTokenOpsEncryptor } from "../hooks/use-tokenops-encryptor";
@@ -212,6 +213,7 @@ function prepareRecipients(
 }
 
 export function CreateCampaignFlow() {
+  const { address } = useAccount();
   const [step, setStep] = useState(0);
   const [type, setType] = useState<CampaignType>("disperse");
   const [name, setName] = useState("");
@@ -260,6 +262,10 @@ export function CreateCampaignFlow() {
     Boolean(defaultToken) &&
     validToken &&
     tokenAddress.toLowerCase() === defaultToken.toLowerCase();
+  const campaignTotal = prepared.recipients.reduce(
+    (sum, recipient) => sum + recipient.amount,
+    0n,
+  );
 
   const detailValid =
     name.trim().length >= 3 &&
@@ -424,12 +430,25 @@ export function CreateCampaignFlow() {
             )}
             {usingTokenOpsDemoToken && (
               <FieldHint>
-                This is the TokenOps Sepolia demo confidential token. Replace it
-                with your own ERC-7984 token address for a real campaign.
+                This is the TokenOps Sepolia demo confidential token (CTTT). It
+                is not Sepolia ETH — mint CTTT below to fund your distribution.
               </FieldHint>
             )}
             {tokenMetadata.isError && <FieldHint error>This address does not expose valid token metadata.</FieldHint>}
           </Field>
+          {usingTokenOpsDemoToken && address && metadata && (
+            <TestTokenFaucet
+              recipient={address}
+              tokenSymbol={metadata.symbol}
+              decimals={metadata.decimals}
+            />
+          )}
+          {usingTokenOpsDemoToken && !address && (
+            <p className="rounded-xl border border-white/[.06] bg-white/[.02] px-4 py-3 text-xs leading-6 text-slate-500">
+              Connect your wallet to mint test {metadata?.symbol ?? "CTTT"}. Sepolia
+              ETH from a faucet is still required for gas.
+            </p>
+          )}
           {type === "airdrop" && (
             <div className="grid gap-4 sm:grid-cols-2">
               <Field label="Claims open">
@@ -445,6 +464,16 @@ export function CreateCampaignFlow() {
 
       {step === 2 && (
         <section className="mt-8">
+          {usingTokenOpsDemoToken && address && metadata && (
+            <div className="mb-5">
+              <TestTokenFaucet
+                recipient={address}
+                campaignTotal={campaignTotal}
+                tokenSymbol={metadata.symbol}
+                decimals={metadata.decimals}
+              />
+            </div>
+          )}
           <div className="rounded-2xl border border-dashed border-white/[.11] bg-white/[.015] p-5">
             <input
               ref={fileRef}
@@ -681,7 +710,11 @@ function DisperseExecution({
   return (
     <ExecutionPanel>
       {token.toLowerCase() === defaultToken.toLowerCase() && (
-        <TestTokenFaucet amount={total} recipient={address} />
+        <TestTokenFaucet
+          recipient={address}
+          campaignTotal={total}
+          tokenSymbol={tokenSymbol}
+        />
       )}
       <StatusRow complete={Boolean(preflight.data?.amountsOk)} label="Recipient amounts validated" />
       <StatusRow complete={Boolean(preflight.data?.batchOk)} label="Within TokenOps batch limit" />
@@ -924,7 +957,11 @@ function AirdropExecution({
   return (
     <ExecutionPanel>
       {token.toLowerCase() === defaultToken.toLowerCase() && (
-        <TestTokenFaucet amount={total} recipient={address} />
+        <TestTokenFaucet
+          recipient={address}
+          campaignTotal={total}
+          tokenSymbol={tokenSymbol}
+        />
       )}
       <StatusRow complete={true} label="Recipient allocations validated" />
       <StatusRow complete={Boolean(operator.data)} label="Airdrop factory authorization" />
@@ -996,31 +1033,4 @@ function ExecutionSuccess({
   );
 }
 
-function TestTokenFaucet({
-  amount,
-  recipient,
-}: {
-  amount: bigint;
-  recipient: Address;
-}) {
-  const faucet = useMintConfidential();
-  return (
-    <div className="mb-5 flex flex-col gap-3 rounded-2xl border border-cyan-400/10 bg-cyan-400/[.035] p-4 sm:flex-row sm:items-center">
-      <div className="flex-1">
-        <p className="text-xs font-semibold text-cyan-100">Sepolia CTTT faucet</p>
-        <p className="mt-1 text-[11px] leading-5 text-slate-600">
-          Mint the exact campaign total if this wallet needs test tokens. Faucet mints are public.
-        </p>
-      </div>
-      <Button
-        variant="secondary"
-        className="h-9 shrink-0 text-xs"
-        disabled={faucet.isPending}
-        onClick={() => faucet.mutate({ amount, to: recipient, account: recipient })}
-      >
-        {faucet.isPending ? "Minting…" : faucet.isSuccess ? "Test tokens minted" : "Mint test CTTT"}
-      </Button>
-      {faucet.error && <span className="text-xs text-rose-300">{faucet.error.message}</span>}
-    </div>
-  );
-}
+
