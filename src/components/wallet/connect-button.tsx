@@ -5,6 +5,7 @@ import {
   ChevronDown,
   Copy,
   ExternalLink,
+  LoaderCircle,
   LogOut,
   Network,
   Wallet,
@@ -20,6 +21,8 @@ import {
   useSwitchChain,
 } from "wagmi";
 import { sepolia } from "wagmi/chains";
+import { useWalletDiscovery } from "../../hooks/use-wallet-discovery";
+import { connectDiscoveredWallet, connectWithConnector } from "../../lib/connect-wallet";
 import { shortAddress } from "../../lib/utils";
 import { Button } from "../ui/button";
 
@@ -48,29 +51,18 @@ function connectorDescription(connector: Connector) {
   if (connector.id === "walletConnect") {
     return "Scan a QR code with a mobile wallet";
   }
-  if (connector.id === "io.metamask") {
-    return "Connect through the MetaMask extension";
-  }
-  if (connector.id.includes("phantom")) {
-    return "Connect through the Phantom extension";
-  }
-  return "Connect through your browser wallet extension";
+  return "Connect through your wallet extension";
 }
 
 export function ConnectButton() {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [isConnecting, setIsConnecting] = useState(false);
   const [uiError, setUiError] = useState<string>();
   const { address, isConnected, connector } = useAccount();
   const chainId = useChainId();
-  const {
-    connectors,
-    connect,
-    error: connectError,
-    isPending: isConnecting,
-    reset: resetConnect,
-  } = useConnect();
+  const { connectors, reset: resetConnect } = useConnect();
   const { disconnect } = useDisconnect();
   const {
     switchChain,
@@ -78,19 +70,16 @@ export function ConnectButton() {
     isPending: isSwitching,
     reset: resetSwitch,
   } = useSwitchChain();
+  const { wallets: discoveredWallets, isDiscovering } =
+    useWalletDiscovery(pickerOpen);
 
   const isWrongNetwork = isConnected && chainId !== sepolia.id;
-  const error = uiError ?? walletErrorMessage(connectError ?? switchError);
+  const error = uiError ?? walletErrorMessage(switchError);
 
-  const availableConnectors = useMemo(() => {
-    const seen = new Set<string>();
-    return connectors.filter((candidate) => {
-      const key = candidate.id === "injected" ? candidate.name : candidate.id;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-  }, [connectors]);
+  const walletConnectors = useMemo(
+    () => connectors.filter((candidate) => candidate.id === "walletConnect"),
+    [connectors],
+  );
 
   useEffect(() => {
     if (!copied) return;
@@ -130,11 +119,35 @@ export function ConnectButton() {
 
   async function connectWith(connector: Connector) {
     clearError();
+    setIsConnecting(true);
     try {
-      await connect({ connector });
+      await connectWithConnector(connector);
       setPickerOpen(false);
-    } catch {
-      // useConnect surfaces the error state.
+    } catch (cause) {
+      setUiError(
+        cause instanceof Error
+          ? walletErrorMessage(cause) ?? cause.message
+          : "Wallet connection failed.",
+      );
+    } finally {
+      setIsConnecting(false);
+    }
+  }
+
+  async function connectDiscovered(wallet: (typeof discoveredWallets)[number]) {
+    clearError();
+    setIsConnecting(true);
+    try {
+      await connectDiscoveredWallet(wallet);
+      setPickerOpen(false);
+    } catch (cause) {
+      setUiError(
+        cause instanceof Error
+          ? walletErrorMessage(cause) ?? cause.message
+          : "Wallet connection failed.",
+      );
+    } finally {
+      setIsConnecting(false);
     }
   }
 
@@ -146,7 +159,7 @@ export function ConnectButton() {
             clearError();
             setPickerOpen(true);
           }}
-          disabled={isConnecting || availableConnectors.length === 0}
+          disabled={isConnecting}
           className="h-10 rounded-full"
         >
           <Wallet size={15} />
@@ -155,10 +168,13 @@ export function ConnectButton() {
 
         {pickerOpen && (
           <WalletPicker
-            connectors={availableConnectors}
+            walletConnectors={walletConnectors}
+            discoveredWallets={discoveredWallets}
+            isDiscovering={isDiscovering}
             isConnecting={isConnecting}
             onClose={() => setPickerOpen(false)}
-            onSelect={(selected) => void connectWith(selected)}
+            onSelectConnector={(selected) => void connectWith(selected)}
+            onSelectDiscovered={(selected) => void connectDiscovered(selected)}
           />
         )}
         {error && <WalletError message={error} onClose={clearError} />}
@@ -265,16 +281,27 @@ export function ConnectButton() {
 }
 
 function WalletPicker({
-  connectors,
+  walletConnectors,
+  discoveredWallets,
+  isDiscovering,
   isConnecting,
   onClose,
-  onSelect,
+  onSelectConnector,
+  onSelectDiscovered,
 }: {
-  connectors: Connector[];
+  walletConnectors: Connector[];
+  discoveredWallets: ReturnType<typeof useWalletDiscovery>["wallets"];
+  isDiscovering: boolean;
   isConnecting: boolean;
   onClose: () => void;
-  onSelect: (connector: Connector) => void;
+  onSelectConnector: (connector: Connector) => void;
+  onSelectDiscovered: (
+    wallet: ReturnType<typeof useWalletDiscovery>["wallets"][number],
+  ) => void;
 }) {
+  const hasOptions =
+    walletConnectors.length > 0 || discoveredWallets.length > 0;
+
   return (
     <>
       <button
@@ -293,7 +320,7 @@ function WalletPicker({
               Connect a wallet
             </p>
             <p className="mt-1 text-xs leading-5 text-slate-500">
-              Choose how you want to connect to Privlo on Sepolia.
+              Choose a wallet. Privlo will not open any wallet until you select one.
             </p>
           </div>
           <button
@@ -306,29 +333,79 @@ function WalletPicker({
         </div>
 
         <div className="space-y-2">
-          {connectors.map((connector) => (
-            <button
-              key={`${connector.id}-${connector.name}`}
+          {walletConnectors.map((connector) => (
+            <WalletOption
+              key={connector.id}
+              title={connectorLabel(connector)}
+              description={connectorDescription(connector)}
               disabled={isConnecting}
-              onClick={() => onSelect(connector)}
-              className="flex w-full items-center gap-3 rounded-xl border border-white/[.06] bg-white/[.02] px-3 py-3 text-left transition hover:border-mint/20 hover:bg-mint/[.04] disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-white/[.05] text-slate-300">
-                <Wallet size={18} />
-              </span>
-              <span className="min-w-0">
-                <span className="block text-sm font-semibold text-white">
-                  {connectorLabel(connector)}
-                </span>
-                <span className="mt-0.5 block text-xs leading-5 text-slate-500">
-                  {connectorDescription(connector)}
-                </span>
-              </span>
-            </button>
+              onClick={() => onSelectConnector(connector)}
+            />
           ))}
+
+          {discoveredWallets.map((wallet) => (
+            <WalletOption
+              key={wallet.id}
+              title={wallet.name}
+              description="Browser extension wallet"
+              icon={wallet.icon}
+              disabled={isConnecting}
+              onClick={() => onSelectDiscovered(wallet)}
+            />
+          ))}
+
+          {isDiscovering && (
+            <div className="flex items-center gap-2 rounded-xl border border-white/[.06] px-3 py-3 text-xs text-slate-500">
+              <LoaderCircle size={14} className="animate-spin text-mint" />
+              Discovering installed wallets…
+            </div>
+          )}
+
+          {!isDiscovering && !hasOptions && (
+            <div className="rounded-xl border border-dashed border-white/[.08] px-3 py-4 text-xs leading-5 text-slate-500">
+              No wallets were detected. Install MetaMask, Phantom, or another
+              EIP-1193 wallet, or use WalletConnect if it is configured.
+            </div>
+          )}
         </div>
       </div>
     </>
+  );
+}
+
+function WalletOption({
+  title,
+  description,
+  icon,
+  disabled,
+  onClick,
+}: {
+  title: string;
+  description: string;
+  icon?: string;
+  disabled?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      disabled={disabled}
+      onClick={onClick}
+      className="flex w-full items-center gap-3 rounded-xl border border-white/[.06] bg-white/[.02] px-3 py-3 text-left transition hover:border-mint/20 hover:bg-mint/[.04] disabled:cursor-not-allowed disabled:opacity-50"
+    >
+      <span className="grid size-10 shrink-0 place-items-center overflow-hidden rounded-xl bg-white/[.05] text-slate-300">
+        {icon ? (
+          <img src={icon} alt="" className="size-6 rounded-md" />
+        ) : (
+          <Wallet size={18} />
+        )}
+      </span>
+      <span className="min-w-0">
+        <span className="block text-sm font-semibold text-white">{title}</span>
+        <span className="mt-0.5 block text-xs leading-5 text-slate-500">
+          {description}
+        </span>
+      </span>
+    </button>
   );
 }
 

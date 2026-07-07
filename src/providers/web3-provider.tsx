@@ -6,23 +6,42 @@ import {
   ZamaProvider,
 } from "@zama-fhe/react-sdk";
 import { WagmiSigner } from "@zama-fhe/react-sdk/wagmi";
-import { useState, type PropsWithChildren } from "react";
-import { WagmiProvider } from "wagmi";
+import { useMemo, useState, type PropsWithChildren } from "react";
+import { sepolia } from "wagmi/chains";
+import { useAccount, WagmiProvider } from "wagmi";
 import { rpcUrl, wagmiConfig } from "../config/chains";
 
-const zamaSigner = new WagmiSigner({ config: wagmiConfig });
+function ZamaGate({ children }: PropsWithChildren) {
+  const { isConnected } = useAccount();
+  const zama = useMemo(() => {
+    const signer = new WagmiSigner({ config: wagmiConfig });
+    const relayer = new RelayerWeb({
+      getChainId: () => Promise.resolve(sepolia.id),
+      transports: {
+        [sepolia.id]: {
+          ...SepoliaConfig,
+          network: rpcUrl,
+          relayerUrl:
+            import.meta.env.VITE_ZAMA_RELAYER_URL ?? SepoliaConfig.relayerUrl,
+        },
+      },
+    });
+    return { signer, relayer };
+  }, []);
 
-const relayer = new RelayerWeb({
-  getChainId: () => zamaSigner.getChainId(),
-  transports: {
-    [11155111]: {
-      ...SepoliaConfig,
-      network: rpcUrl,
-      relayerUrl:
-        import.meta.env.VITE_ZAMA_RELAYER_URL ?? SepoliaConfig.relayerUrl,
-    },
-  },
-});
+  if (!isConnected) return children;
+
+  return (
+    <ZamaProvider
+      relayer={zama.relayer}
+      signer={zama.signer}
+      storage={indexedDBStorage}
+      sessionTTL={60 * 60}
+    >
+      {children}
+    </ZamaProvider>
+  );
+}
 
 export function Web3Provider({ children }: PropsWithChildren) {
   const [queryClient] = useState(
@@ -35,16 +54,9 @@ export function Web3Provider({ children }: PropsWithChildren) {
   );
 
   return (
-    <WagmiProvider config={wagmiConfig}>
+    <WagmiProvider config={wagmiConfig} reconnectOnMount={false}>
       <QueryClientProvider client={queryClient}>
-        <ZamaProvider
-          relayer={relayer}
-          signer={zamaSigner}
-          storage={indexedDBStorage}
-          sessionTTL={60 * 60}
-        >
-          {children}
-        </ZamaProvider>
+        <ZamaGate>{children}</ZamaGate>
       </QueryClientProvider>
     </WagmiProvider>
   );

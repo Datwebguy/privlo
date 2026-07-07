@@ -1,5 +1,5 @@
 import { http, createConfig } from "wagmi";
-import { injected, walletConnect } from "wagmi/connectors";
+import { walletConnect } from "wagmi/connectors";
 import { sepolia } from "wagmi/chains";
 
 export const rpcUrl =
@@ -11,10 +11,10 @@ const walletConnectProjectId =
 
 export const wagmiConfig = createConfig({
   chains: [sepolia],
-  multiInjectedProviderDiscovery: true,
+  // Never probe browser wallets at page load — discovery runs when the picker opens.
+  multiInjectedProviderDiscovery: false,
+  storage: null,
   connectors: [
-    injected({ shimDisconnect: true }),
-    injected({ target: "metaMask", shimDisconnect: true }),
     ...(walletConnectProjectId
       ? [
           walletConnect({
