@@ -10,6 +10,7 @@ import {
   Check,
   Eye,
   FileKey2,
+  Link2,
   LoaderCircle,
   LockKeyhole,
   ReceiptText,
@@ -17,7 +18,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
-import { formatUnits, parseAbi } from "viem";
+import { formatUnits, parseAbi, type Address } from "viem";
 import {
   useAccount,
   usePublicClient,
@@ -32,11 +33,16 @@ import {
   confidentialBalanceQueryKey,
   useConfidentialBalance,
 } from "../hooks/use-confidential-balance";
-import { claimsQueryKey, useClaims } from "../hooks/use-claims";
+import {
+  claimsQueryKey,
+  useClaims,
+  useSyncRemoteClaims,
+} from "../hooks/use-claims";
 import { usePrivateClaim } from "../hooks/use-private-claim";
 import {
   clearClaimImportFromLocation,
   decodeClaimImport,
+  extractClaimImportPayload,
   readClaimImportFromLocation,
 } from "../lib/claim-import";
 import {
@@ -65,6 +71,7 @@ export function MyClaimsFlow() {
   );
   const queryClient = useQueryClient();
   const claims = useClaims(address);
+  const remoteSync = useSyncRemoteClaims(address, signMessage);
   const confidentialBalance = useConfidentialBalance({
     tokenAddress: demoTokenAddress ?? undefined,
     tokenSymbol: "CTTT",
@@ -115,11 +122,12 @@ export function MyClaimsFlow() {
         <div>
           <p className="eyebrow">Recipient portal</p>
           <h1 className="mt-2 font-display text-3xl font-semibold tracking-[-.04em] sm:text-4xl">
-            My private claims
+            Receive confidential tokens
           </h1>
           <p className="mt-3 text-sm text-slate-500">
-            Airdrop allocations appear here to decrypt and claim. Direct disperse
-            transfers land in your confidential balance above — no claim ticket.
+            Direct disperse transfers appear in your balance. Airdrop campaigns
+            require a claim authorization below — paste a claim link from the
+            creator if nothing shows up.
           </p>
         </div>
         <PrivacyBadge label="Visible only to you" />
@@ -141,14 +149,19 @@ export function MyClaimsFlow() {
       </div>
 
       {isConnected && demoTokenAddress && (
-        <div className="mt-8">
+        <section className="mt-8">
+          <SectionHeading
+            title="Direct disperse balance"
+            copy="Tokens from disperse campaigns land here automatically after the creator executes."
+          />
           <ConfidentialBalancePanel
             tokenAddress={demoTokenAddress}
             tokenSymbol="CTTT"
             decimals={6}
-            title="Your claimed token balance"
+            title="Your confidential token balance"
+            className="mt-4"
           />
-        </div>
+        </section>
       )}
 
       {!isConnected ? (
@@ -185,58 +198,79 @@ export function MyClaimsFlow() {
               {importError}
             </div>
           )}
-          <div className="mt-7 flex items-center justify-between">
-            <p className="text-sm text-slate-500">
-              {pendingClaims.length} pending{" "}
-              {pendingClaims.length === 1 ? "claim" : "claims"} for{" "}
-              <span className="font-mono text-slate-300">{shortAddress(address)}</span>
-            </p>
-            <button
-              type="button"
-              onClick={() => void claims.refetch()}
-              className="text-xs font-semibold text-mint"
-            >
-              Refresh inbox
-            </button>
-          </div>
-          {pendingClaims.length ? (
-            <div className="mt-3 space-y-4">
-              {pendingClaims.map((claim) => (
-                <ClaimCard
-                  key={claim.id}
-                  claim={claim}
-                  recipient={address!}
-                  signMessage={signMessage}
-                />
-              ))}
+          <section className="mt-10">
+            <SectionHeading
+              title="Airdrop claims"
+              copy="Decrypt your allocation, then submit the onchain claim transaction."
+            />
+            <ClaimLinkImport
+              recipient={address!}
+              onImported={(campaignName) => {
+                void queryClient.invalidateQueries({
+                  queryKey: claimsQueryKey(address),
+                });
+                setImportNotice(
+                  `Imported "${campaignName}". Your airdrop claim is ready below.`,
+                );
+                setImportError(undefined);
+              }}
+              onError={setImportError}
+            />
+            {remoteSync.syncError && (
+              <div className="mt-4 rounded-xl border border-amber-400/15 bg-amber-400/[.04] p-3 text-xs leading-5 text-amber-100/80">
+                {remoteSync.syncError}
+              </div>
+            )}
+            <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
+              <p className="text-sm text-slate-500">
+                {pendingClaims.length} pending{" "}
+                {pendingClaims.length === 1 ? "claim" : "claims"} for{" "}
+                <span className="font-mono text-slate-300">
+                  {shortAddress(address)}
+                </span>
+              </p>
+              <div className="flex items-center gap-4">
+                <button
+                  type="button"
+                  onClick={() => void claims.refetch()}
+                  className="text-xs font-semibold text-mint"
+                >
+                  Refresh inbox
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void remoteSync.syncRemote()}
+                  disabled={remoteSync.syncing}
+                  className="text-xs font-semibold text-slate-500 hover:text-slate-300 disabled:opacity-50"
+                  title="One wallet signature to check Privlo cloud for airdrop authorizations"
+                >
+                  {remoteSync.syncing ? "Checking cloud…" : "Check cloud inbox"}
+                </button>
+              </div>
             </div>
-          ) : !confidentialBalance.isLoading && !confidentialBalance.zeroBalance ? (
-            <DisperseReceivedNotice
-              tokenSymbol={confidentialBalance.symbol}
-              revealedAmount={
-                confidentialBalance.revealedAmount !== undefined &&
-                confidentialBalance.decimals !== undefined
-                  ? formatUnits(
-                      confidentialBalance.revealedAmount,
-                      confidentialBalance.decimals,
-                    )
-                  : undefined
-              }
-              onReveal={() => void confidentialBalance.reveal()}
-              revealing={confidentialBalance.isRevealing}
-              revealError={confidentialBalance.error?.message}
-            />
-          ) : (
-            <EmptyClaims
-              title="No airdrop claims yet"
-              copy="This inbox is for confidential airdrops that require a recipient claim. Direct disperse campaigns transfer tokens straight into your confidential balance above — no claim ticket appears here."
-              hints={[
-                "Received a direct disperse? Decrypt your confidential balance card above.",
-                "Waiting on an airdrop? Use the same recipient wallet the creator added.",
-                "If remote delivery failed, ask the creator for a one-time claim link.",
-              ]}
-            />
-          )}
+            {pendingClaims.length ? (
+              <div className="mt-3 space-y-4">
+                {pendingClaims.map((claim) => (
+                  <ClaimCard
+                    key={claim.id}
+                    claim={claim}
+                    recipient={address!}
+                    signMessage={signMessage}
+                  />
+                ))}
+              </div>
+            ) : (
+              <EmptyClaims
+                title="No airdrop claims yet"
+                copy="Paste the claim link the creator sent you, or ask them to run an Airdrop campaign (not Disperse). Each airdrop needs a signed authorization before you can claim."
+                hints={[
+                  "Use the same recipient wallet the creator added to the campaign.",
+                  "After the creator executes, copy your personal claim link from their success screen.",
+                  "Check cloud inbox signs once — only if the creator published to Privlo cloud.",
+                ]}
+              />
+            )}
+          </section>
         </>
       )}
     </div>
@@ -489,73 +523,99 @@ function ClaimCard({
   );
 }
 
-function DisperseReceivedNotice({
-  tokenSymbol,
-  revealedAmount,
-  onReveal,
-  revealing,
-  revealError,
+function SectionHeading({
+  title,
+  copy,
 }: {
-  tokenSymbol: string;
-  revealedAmount?: string;
-  onReveal: () => void;
-  revealing: boolean;
-  revealError?: string;
+  title: string;
+  copy: string;
 }) {
-  const complete = Boolean(revealedAmount);
+  return (
+    <div>
+      <h2 className="font-display text-lg font-semibold tracking-[-.02em]">
+        {title}
+      </h2>
+      <p className="mt-1 text-xs leading-5 text-slate-500">{copy}</p>
+    </div>
+  );
+}
+
+function ClaimLinkImport({
+  recipient,
+  onImported,
+  onError,
+}: {
+  recipient: Address;
+  onImported: (campaignName: string) => void;
+  onError: (message: string) => void;
+}) {
+  const [value, setValue] = useState("");
+  const [importing, setImporting] = useState(false);
+
+  function submit() {
+    onError("");
+    const payload = extractClaimImportPayload(value);
+    if (!payload) {
+      onError("Paste a full claim link from the campaign creator.");
+      return;
+    }
+
+    const imported = decodeClaimImport(payload);
+    if (!imported) {
+      onError("This claim link is invalid or expired.");
+      return;
+    }
+
+    if (imported.recipient.toLowerCase() !== recipient.toLowerCase()) {
+      onError(
+        `This link is for ${shortAddress(imported.recipient)}. Connect that wallet to import it.`,
+      );
+      return;
+    }
+
+    setImporting(true);
+    try {
+      importClaimForRecipient(imported);
+      onImported(imported.claim.campaignName);
+      setValue("");
+    } finally {
+      setImporting(false);
+    }
+  }
 
   return (
-    <div className="mt-6 rounded-3xl border border-mint/20 bg-mint/[.04] p-8 text-center">
-      <span className="mx-auto grid size-12 place-items-center rounded-2xl bg-mint/10 text-mint">
-        {complete ? <Check size={21} strokeWidth={3} /> : <ShieldCheck size={21} />}
-      </span>
-      <h2 className="mt-5 font-display text-lg font-semibold">
-        {complete ? "Tokens already in your wallet" : "Direct disperse received"}
-      </h2>
-      <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-400">
-        {complete ? (
-          <>
-            You received{" "}
-            <strong className="text-slate-200">
-              {revealedAmount} {tokenSymbol}
-            </strong>{" "}
-            from a direct disperse. Tokens were transferred onchain when the
-            creator executed — there is no separate claim button for this flow.
-          </>
-        ) : (
-          <>
-            Tokens from a direct disperse are already in your confidential
-            balance. Decrypt the balance card above to see your {tokenSymbol}{" "}
-            amount — no claim step is required.
-          </>
-        )}
+    <div className="mt-4 rounded-2xl border border-white/[.07] bg-white/[.02] p-4">
+      <div className="flex items-center gap-2 text-sm font-semibold text-slate-300">
+        <Link2 size={15} className="text-mint" />
+        Import airdrop claim link
+      </div>
+      <p className="mt-1 text-xs leading-5 text-slate-500">
+        The creator copies this from the success screen after funding an
+        airdrop. Disperse campaigns do not generate claim links.
       </p>
-      {revealError && (
-        <div
-          role="alert"
-          className="mx-auto mt-4 max-w-md rounded-xl border border-rose-400/15 bg-rose-400/[.04] p-3 text-xs leading-5 text-rose-200"
-        >
-          {revealError}
-        </div>
-      )}
-      {!complete && (
+      <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+        <input
+          type="url"
+          value={value}
+          onChange={(event) => setValue(event.target.value)}
+          placeholder="https://privlo.vercel.app/app/claims#import=…"
+          className="h-11 flex-1 rounded-xl border border-white/[.08] bg-black/25 px-3 font-mono text-xs text-slate-200 outline-none ring-mint/30 placeholder:text-slate-600 focus:ring-2"
+        />
         <Button
-          onClick={onReveal}
-          disabled={revealing}
-          className="mt-6 h-11 rounded-2xl px-6"
+          type="button"
+          onClick={submit}
+          disabled={importing || !value.trim()}
+          className="h-11 shrink-0 rounded-xl px-5"
         >
-          {revealing ? (
+          {importing ? (
             <>
-              <LoaderCircle className="animate-spin" size={16} /> Authorizing
-              balance reveal…
+              <LoaderCircle className="animate-spin" size={16} /> Importing…
             </>
           ) : (
-            <>
-              <Eye size={16} /> Decrypt confidential balance
-            </>
+            "Import claim"
           )}
         </Button>
-      )}
+      </div>
     </div>
   );
 }

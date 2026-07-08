@@ -60,7 +60,10 @@ import { PrivacyBadge } from "../components/ui/privacy-badge";
 import { campaignQueryKey } from "../hooks/use-campaigns";
 import { confidentialBalanceQueryKey } from "../hooks/use-confidential-balance";
 import { usePrivloFheWarmup } from "../providers/fhe-warmup-provider";
-import { runDisperseWithEncryptRetry } from "../lib/disperse-encrypt";
+import {
+  runDisperseWithEncryptRetry,
+  runEncryptWithRetry,
+} from "../lib/disperse-encrypt";
 import { formatExecutionError } from "../lib/zama-errors";
 
 import { saveCampaign } from "../lib/campaign-repository";
@@ -984,12 +987,14 @@ function AirdropExecution({
           );
         }
         setProgress(`Encrypting authorization ${index + 1} of ${recipients.length}…`);
-        const encryptedInput = await encryptUint64({
-          encryptor: zamaSDK.relayer,
-          contractAddress: result.airdrop,
-          userAddress: recipient.address,
-          value: recipient.amount,
-        });
+        const encryptedInput = await runEncryptWithRetry(() =>
+          encryptUint64({
+            encryptor: zamaSDK.relayer,
+            contractAddress: result.airdrop,
+            userAddress: recipient.address,
+            value: recipient.amount,
+          }),
+        );
         setProgress(`Signing authorization ${index + 1} of ${recipients.length}…`);
         const signature = await signClaimAuthorization({
           walletClient: wallet.data,

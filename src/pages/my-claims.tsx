@@ -14,8 +14,8 @@ export function MyClaims() {
   if (!isConnected) {
     return (
       <WalletRequired
-        title="Connect to view your claims"
-        copy="Connect the recipient wallet on Sepolia to decrypt and claim confidential allocations."
+        title="Connect to receive tokens"
+        copy="Connect the recipient wallet on Sepolia to view disperse balances or claim confidential airdrops."
       />
     );
   }

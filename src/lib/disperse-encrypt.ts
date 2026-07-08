@@ -12,10 +12,38 @@ function sleep(ms: number) {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
+const ENCRYPT_RETRY_ATTEMPTS = 3;
+const ENCRYPT_RETRY_DELAY_MS = 4_000;
+
 export function isEncryptionTimeout(error: unknown) {
   if (!(error instanceof Error)) return false;
   const message = error.message.toLowerCase();
   return message.includes("timed out") || message.includes("timeout");
+}
+
+/** Retry a single FHE encrypt call (airdrop authorizations, etc.). */
+export async function runEncryptWithRetry<T>(
+  execute: () => Promise<T>,
+  attempts = ENCRYPT_RETRY_ATTEMPTS,
+): Promise<T> {
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      return await execute();
+    } catch (cause) {
+      lastError = cause;
+      if (isEncryptionTimeout(cause) && attempt < attempts - 1) {
+        await sleep(ENCRYPT_RETRY_DELAY_MS * (attempt + 1));
+        continue;
+      }
+      throw cause;
+    }
+  }
+
+  throw lastError instanceof Error
+    ? lastError
+    : new Error("Confidential encryption failed.");
 }
 
 /** Prime batch FHE encrypt for TokenOps disperse — runs only at execute time. */

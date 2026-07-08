@@ -16,7 +16,7 @@ const navigation = [
   { to: "/app", label: "Registry", icon: Shield, end: true },
   { to: "/app/campaigns", label: "Campaigns", icon: LayoutGrid },
   { to: "/app/campaigns/new", label: "Create", icon: FilePlus2 },
-  { to: "/app/claims", label: "My claims", icon: ReceiptText },
+  { to: "/app/claims", label: "Receive", icon: ReceiptText },
 ];
 
 export function AppShell() {

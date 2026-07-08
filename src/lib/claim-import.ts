@@ -73,6 +73,34 @@ export function decodeClaimImport(
   }
 }
 
+export function extractClaimImportPayload(value: string): string | undefined {
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+
+  if (!trimmed.includes("/") && !trimmed.includes("?") && !trimmed.includes("#")) {
+    return trimmed;
+  }
+
+  try {
+    const parsed = new URL(trimmed);
+    const hash = parsed.hash.replace(/^#/, "");
+    if (hash.startsWith("import=")) {
+      return decodeURIComponent(hash.slice("import=".length));
+    }
+    const query = parsed.searchParams.get("import");
+    if (query) return query;
+  } catch {
+    // Fall through to raw payload parsing.
+  }
+
+  const hashIndex = trimmed.indexOf("#import=");
+  if (hashIndex >= 0) {
+    return decodeURIComponent(trimmed.slice(hashIndex + "#import=".length));
+  }
+
+  return undefined;
+}
+
 export function readClaimImportFromLocation(): string | undefined {
   if (typeof window === "undefined") return undefined;
   const hash = window.location.hash.replace(/^#/, "");
