@@ -207,11 +207,11 @@ export function MyClaimsFlow() {
           ) : (
             <EmptyClaims
               title="No claims yet"
-              copy="Nothing is waiting for this wallet. After a confidential airdrop, the creator shares a private claim link — open it with this recipient wallet to load your authorization."
+              copy="Nothing is waiting for this wallet. After a creator issues a confidential airdrop, your authorization is delivered to this inbox automatically — connect the recipient wallet that was added to the campaign."
               hints={[
                 "Use the same recipient wallet the creator added to the campaign.",
-                "Open the claim link from the creator (not just this page).",
-                "Same-browser testing also works if you created and claimed in one browser.",
+                "New allocations can take a moment — tap Refresh inbox.",
+                "If remote delivery failed, the creator can share a one-time claim link instead.",
               ]}
             />
           )}

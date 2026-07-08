@@ -11,7 +11,8 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "typecheck": "tsc -b --pretty false"
+    "typecheck": "tsc -b --pretty false",
+    "setup:inbox": "node scripts/setup-claim-inbox.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.110.1",
