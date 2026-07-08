@@ -1,6 +1,6 @@
-import type { PublishClaimInput, StoredClaim } from "./types";
-import { normalizeAddress } from "./validation";
-import { getSupabase } from "./supabase";
+import type { PublishClaimInput, StoredClaim } from "./types.js";
+import { normalizeAddress } from "./validation.js";
+import { getSupabase } from "./supabase.js";
 
 interface ClaimRow {
   id: string;

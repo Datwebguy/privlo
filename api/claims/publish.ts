@@ -1,8 +1,8 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { verifyWalletMessage } from "../_lib/auth";
-import { upsertClaims } from "../_lib/claims-store";
-import { MAX_BODY_BYTES } from "../_lib/constants";
-import { handlePreflight } from "../_lib/cors";
+import { verifyWalletMessage } from "../_lib/auth.js";
+import { upsertClaims } from "../_lib/claims-store.js";
+import { MAX_BODY_BYTES } from "../_lib/constants.js";
+import { handlePreflight } from "../_lib/cors.js";
 import {
   badRequest,
   methodNotAllowed,
@@ -10,11 +10,11 @@ import {
   unauthorized,
   payloadTooLarge,
   json,
-} from "../_lib/response";
+} from "../_lib/response.js";
 import {
   containsForbiddenAmountFields,
   parsePublishBody,
-} from "../_lib/validation";
+} from "../_lib/validation.js";
 
 function readBodySize(req: VercelRequest): number {
   const length = req.headers["content-length"];

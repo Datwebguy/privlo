@@ -6,7 +6,7 @@ import {
   MAX_CLAIMS_PER_REQUEST,
   MAX_MESSAGE_LENGTH,
 } from "./constants.js";
-import type { PublishClaimInput } from "./types";
+import type { PublishClaimInput } from "./types.js";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);

@@ -1,5 +1,5 @@
 import type { VercelResponse } from "@vercel/node";
-import { applyCors } from "./cors";
+import { applyCors } from "./cors.js";
 import type { VercelRequest } from "@vercel/node";
 
 export function json(
