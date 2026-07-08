@@ -36,15 +36,16 @@ Source: https://www.zama.org/developer-hub#developer-program
 
 ## Before submission
 
-- [ ] Deploy the frontend to a public HTTPS URL
-- [ ] Deploy an authenticated cross-device claim inbox
+- [x] Deploy the frontend to a public HTTPS URL — https://privlo.vercel.app
+- [x] Publish the source repository — https://github.com/Datwebguy/privlo
+- [x] Add screenshots and architecture diagram — `docs/assets/`
+- [ ] Deploy an authenticated cross-device claim inbox (optional; localStorage works for demo)
 - [ ] Record one real Disperse transaction on Sepolia
 - [ ] Record one complete Airdrop create → decrypt → claim loop on Sepolia
-- [ ] Put the real transaction links in the README
-- [ ] Publish the source repository
-- [ ] Add screenshots and architecture diagram
-- [ ] Record the three-minute demo
-- [ ] Submit through the Zama Developer Program form
+- [ ] Put the real transaction links in the README (after recording)
+- [ ] Record the three-minute demo — script: `docs/video-pitch-tokenops-bounty.md`
+- [ ] Post X thread — script: `docs/x-thread-tokenops-bounty.md`
+- [ ] Submit through the Zama Developer Program form (deadline: Jul 7, 2026 23:59 AOE)
 
 ## Demo narrative
 

@@ -4,17 +4,19 @@
   <br />
 
   <p>
-    <strong>Production dApp for the Zama Confidential Wrapper Registry on Sepolia.</strong>
+    <strong>Confidential distribution layer for onchain teams — built with the TokenOps SDK on Sepolia.</strong>
   </p>
 
   <p>
-    Browse onchain ERC-20 ↔ ERC-7984 pairs, mint official cTokenMocks, wrap and unwrap balances,
-    and decrypt any confidential token with EIP-712 user authorization — plus optional confidential
-    distributions via TokenOps.
+    Creators run encrypted <strong>Disperse</strong> or <strong>Airdrop</strong> campaigns via TokenOps'
+    pre-deployed contracts. Recipients decrypt only their allocation, then claim onchain. Also ships a
+    production client for the Zama Confidential Wrapper Registry (wrap, unwrap, EIP-712 decrypt).
   </p>
 
   <p>
-    <a href="https://privlo.vercel.app/app"><strong>Live app</strong></a>
+    <a href="https://privlo.vercel.app/app/campaigns/new"><strong>Live demo</strong></a>
+    &nbsp;&middot;&nbsp;
+    <a href="#tokenops-special-bounty"><strong>TokenOps bounty</strong></a>
     &nbsp;&middot;&nbsp;
     <a href="#wrappers-registry-bounty"><strong>Registry bounty</strong></a>
     &nbsp;&middot;&nbsp;
@@ -35,6 +37,27 @@
 </div>
 
 ---
+
+## TokenOps Special Bounty
+
+**Live:** [https://privlo.vercel.app/app/campaigns/new](https://privlo.vercel.app/app/campaigns/new) · **Claims:** [https://privlo.vercel.app/app/claims](https://privlo.vercel.app/app/claims) · **Network:** Sepolia · **Source:** [github.com/Datwebguy/privlo](https://github.com/Datwebguy/privlo)
+
+Privlo is a wallet-native product layer on the published [`@tokenops/sdk`](https://www.npmjs.com/package/@tokenops/sdk) package and TokenOps' pre-deployed Sepolia contracts:
+
+| Requirement | Implementation |
+| --- | --- |
+| Confidential Disperse | `fhe-disperse` client → TokenOps Sepolia singleton |
+| Confidential Airdrop | `fhe-airdrop` client → Airdrop factory + recipient claim flow |
+| ERC-7984 confidential tokens | CTTT test token + operator approvals before execution |
+| Client-side encryption | Zama FHE worker pre-warm + encrypt before tx submission |
+| CSV + manual recipients | Validated import with review-step privacy checklist |
+| TokenOps preflight | Runs before every Disperse / Airdrop write |
+| Recipient-controlled reveal | EIP-712 scoped decryption at `/app/claims` |
+| Claim with original payload | Never regenerates issuer-signed encrypted input |
+
+**Demo path:** Create campaign → wait for privacy engine warmup (first visit, up to ~90s) → execute Airdrop → recipient opens claims → Decrypt amount → Claim.
+
+See [How to use Privlo](#how-to-use-privlo) and the [3-minute video script](./docs/video-pitch-tokenops-bounty.md).
 
 ## Wrappers Registry bounty
 
@@ -85,7 +108,7 @@ Restart the dev server or redeploy. The Registry page at `/app` picks up local p
 6. **Unwrap** back to ERC-20 when needed.
 7. Paste any ERC-7984 address in **Decrypt any balance** to decrypt outside the pair list.
 
-Confidential payroll / airdrop campaigns (`/app/campaigns`) are a bonus workflow built on TokenOps, not required for registry judging.
+Confidential payroll / airdrop campaigns (`/app/campaigns`) are the primary TokenOps Special Bounty workflow; the registry UI at `/app` is an additional Zama integration.
 
 ## About Privlo
 
@@ -547,11 +570,12 @@ public production launch still benefits from a dedicated RPC provider and monito
 
 Privlo targets:
 
+- **TokenOps Special Bounty (primary submission):** confidential Disperse and Airdrop flows on
+  pre-deployed Sepolia contracts via `@tokenops/sdk`, with CSV import, preflight, encryption warmup,
+  and recipient decrypt → claim UX.
+- **Builder Track:** wallet-native UX for confidential finance with recipient-controlled reveal.
 - **Confidential Wrapper Registry bounty:** browse onchain pairs, wrap/unwrap, EIP-712 decrypt,
   cTokenMock faucet, and documented local pair configuration.
-- **TokenOps Special Bounty (bonus):** confidential Disperse and Airdrop flows on pre-deployed
-  Sepolia contracts.
-- **Builder Track:** wallet-native UX for confidential finance with recipient-controlled reveal.
 
 The project demonstrates end-to-end encryption, programmable confidentiality, EVM composability,
 and practical workflows beyond a privacy-only technical demo.
@@ -560,7 +584,8 @@ and practical workflows beyond a privacy-only technical demo.
 
 - [Protocol integration and invariants](./docs/protocol-integration.md)
 - [Developer Program submission checklist](./docs/developer-program-checklist.md)
-- [Three-minute video pitch](./docs/video-pitch.md)
+- [Three-minute video pitch — TokenOps bounty](./docs/video-pitch-tokenops-bounty.md)
+- [X thread — TokenOps bounty](./docs/x-thread-tokenops-bounty.md)
 
 ## License
 
