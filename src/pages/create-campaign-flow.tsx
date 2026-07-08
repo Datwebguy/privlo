@@ -15,6 +15,7 @@ import {
   usePreflightDisperse,
 } from "@tokenops/sdk/fhe-disperse/react";
 import { useZamaSDK } from "@zama-fhe/react-sdk";
+import type { RelayerWeb } from "@zama-fhe/sdk";
 
 import {
   AlertCircle,
@@ -59,6 +60,7 @@ import { PrivacyBadge } from "../components/ui/privacy-badge";
 import { campaignQueryKey } from "../hooks/use-campaigns";
 import { confidentialBalanceQueryKey } from "../hooks/use-confidential-balance";
 import { usePrivloFheWarmup } from "../providers/fhe-warmup-provider";
+import { runDisperseWithEncryptRetry } from "../lib/disperse-encrypt";
 import { formatExecutionError } from "../lib/zama-errors";
 
 import { saveCampaign } from "../lib/campaign-repository";
@@ -675,6 +677,7 @@ function DisperseExecution({
   const navigate = useNavigate();
   const [approving, setApproving] = useState(false);
   const [error, setError] = useState<string>();
+  const [encryptAttempt, setEncryptAttempt] = useState(0);
   const amounts = useMemo(() => recipients.map((recipient) => recipient.amount), [recipients]);
   const total = amounts.reduce((sum, amount) => sum + amount, 0n);
   const addresses = useMemo(() => recipients.map((recipient) => recipient.address), [recipients]);
@@ -714,6 +717,7 @@ function DisperseExecution({
   async function execute() {
     if (!address || !wallet.data) return;
     setError(undefined);
+    setEncryptAttempt(0);
     try {
       await fhe.ensureReady();
       const [activeAccount] = await wallet.data.getAddresses();
@@ -722,12 +726,21 @@ function DisperseExecution({
           "The active wallet changed. Reconnect the original creator before continuing.",
         );
       }
-      const result = await disperse.mutateAsync({
-        token,
-        mode: "direct",
-        recipients: addresses,
-        amounts,
-        account: address,
+      const relayer = zamaSDK.relayer as RelayerWeb;
+      const result = await runDisperseWithEncryptRetry({
+        relayer,
+        singletonAddress: singleton,
+        userAddress: address,
+        recipientCount: recipients.length,
+        onPrime: (attempt) => setEncryptAttempt(attempt),
+        execute: () =>
+          disperse.mutateAsync({
+            token,
+            mode: "direct",
+            recipients: addresses,
+            amounts,
+            account: address,
+          }),
       });
       const campaign: Campaign = {
         id: result.hash,
@@ -748,13 +761,9 @@ function DisperseExecution({
         queryKey: confidentialBalanceQueryKey(token, address),
       });
     } catch (cause) {
-      if (
-        cause instanceof Error &&
-        /timed out|timeout/i.test(cause.message)
-      ) {
-        void fhe.retryWarmup();
-      }
       setError(formatExecutionError(cause));
+    } finally {
+      setEncryptAttempt(0);
     }
   }
 
@@ -763,6 +772,7 @@ function DisperseExecution({
     return <ExecutionSuccess hash={disperse.data.hash} onDone={() => navigate("/app/campaigns")} />;
   }
 
+  const encrypting = disperse.isPending || encryptAttempt > 0;
   const needsApproval = preflight.data?.hasApprovedSingleton === false;
   return (
     <ExecutionPanel>
@@ -802,13 +812,13 @@ function DisperseExecution({
           onClick={() => void execute()}
           disabled={
             !preflight.data?.ready ||
-            disperse.isPending ||
+            encrypting ||
             !wallet.data ||
             !fhe.ready
           }
         >
-          {disperse.isPending ? (
-            <><LoaderCircle className="animate-spin" size={16} /> Encrypting {recipients.length} amounts — keep tab open…</>
+          {encrypting ? (
+            <><LoaderCircle className="animate-spin" size={16} /> Encrypting {recipients.length} amounts{encryptAttempt > 1 ? ` (retry ${encryptAttempt})` : ""} — keep tab open…</>
           ) : !fhe.ready ? (
             <><LoaderCircle className="animate-spin" size={16} /> Loading privacy engine…</>
           ) : (
