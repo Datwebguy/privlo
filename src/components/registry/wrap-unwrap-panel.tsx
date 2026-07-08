@@ -7,7 +7,7 @@ import {
   zamaQueryKeys,
 } from "@zama-fhe/react-sdk";
 import { ArrowDownUp, LoaderCircle, ShieldCheck } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import { formatUnits, parseUnits } from "viem";
 import { useAccount, useBalance } from "wagmi";
 import { sepolia } from "wagmi/chains";
@@ -91,11 +91,6 @@ export function WrapUnwrapPanel({ pair }: { pair: RegistryPair }) {
     queryClient,
     underlyingBalance,
   ]);
-
-  useEffect(() => {
-    if (!address) return;
-    void fhe.ensureReady().catch(() => undefined);
-  }, [address, fhe, pair.confidentialTokenAddress]);
 
   function switchMode(next: "wrap" | "unwrap") {
     setMode(next);
@@ -304,11 +299,7 @@ export function WrapUnwrapPanel({ pair }: { pair: RegistryPair }) {
             Switch to Sepolia in your wallet to continue.
           </p>
         )}
-        {!fhe.ready && !wrongNetwork && mode === "unwrap" && (
-          <p className="mt-3 text-center text-xs text-slate-500">
-            Preparing encryption for unwrap… wait for the header badge to show Ready.
-          </p>
-        )}
+
       </div>
 
       {address && (

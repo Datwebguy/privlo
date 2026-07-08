@@ -264,11 +264,8 @@ export function useFheReady(target?: FheWarmupTarget) {
 }
 
 export function fheWarmupMessage(phase: FheWarmupPhase, elapsedSec: number) {
-  if (phase === "initializing") {
-    return `Loading secure encryption in the background… ${elapsedSec}s`;
-  }
-  if (phase === "warming") {
-    return `Almost ready — finishing encryption setup… ${elapsedSec}s`;
+  if (phase === "initializing" || phase === "warming") {
+    return `Loading privacy engine… ${elapsedSec}s (first visit only)`;
   }
   return "";
 }

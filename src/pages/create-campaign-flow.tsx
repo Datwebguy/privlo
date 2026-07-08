@@ -33,7 +33,7 @@ import {
   Trash2,
   Upload,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
   getAddress,
@@ -58,10 +58,7 @@ import { ConfidentialBalancePanel } from "../components/wallet/confidential-bala
 import { PrivacyBadge } from "../components/ui/privacy-badge";
 import { campaignQueryKey } from "../hooks/use-campaigns";
 import { confidentialBalanceQueryKey } from "../hooks/use-confidential-balance";
-import {
-  fheWarmupMessage,
-  usePrivloFheWarmup,
-} from "../providers/fhe-warmup-provider";
+import { usePrivloFheWarmup } from "../providers/fhe-warmup-provider";
 import { formatExecutionError } from "../lib/zama-errors";
 
 import { saveCampaign } from "../lib/campaign-repository";
@@ -283,22 +280,7 @@ export function CreateCampaignFlow() {
       ? requireFheAirdropFactoryAddress(sepolia.id)
       : requireFheDisperseSingletonAddress(sepolia.id);
   }, [type]);
-  const fhe = usePrivloFheWarmup(
-    warmupContract,
-    step === 3 && type === "disperse" && prepared.recipients.length > 0
-      ? { minBatchSize: prepared.recipients.length }
-      : undefined,
-  );
-
-  useEffect(() => {
-    if (step !== 3 || type !== "disperse" || !warmupContract || !address) return;
-    if (prepared.recipients.length === 0) return;
-    void fhe.ensureReady({
-      batchSize: prepared.recipients.length,
-      alsoWarm: validToken ? [getAddress(tokenAddress)] : undefined,
-    }).catch(() => undefined);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- pre-warm once per recipient count
-  }, [address, prepared.recipients.length, step, tokenAddress, type, validToken, warmupContract]);
+  const fhe = usePrivloFheWarmup(warmupContract);
 
   const detailValid =
     name.trim().length >= 3 &&
@@ -599,10 +581,6 @@ export function CreateCampaignFlow() {
         </section>
       )}
 
-      {address && type !== "vesting" && (
-        <FheWarmupBanner fhe={fhe} className="mt-6" />
-      )}
-
       {step === 3 && metadata && (
         <section className="mt-8 space-y-5">
           {address && (
@@ -737,10 +715,7 @@ function DisperseExecution({
     if (!address || !wallet.data) return;
     setError(undefined);
     try {
-      await fhe.ensureReady({
-        batchSize: recipients.length,
-        alsoWarm: [token],
-      });
+      await fhe.ensureReady();
       const [activeAccount] = await wallet.data.getAddresses();
       if (!activeAccount || activeAccount.toLowerCase() !== address.toLowerCase()) {
         throw new Error(
@@ -829,14 +804,13 @@ function DisperseExecution({
             !preflight.data?.ready ||
             disperse.isPending ||
             !wallet.data ||
-            !fhe.ready ||
-            fhe.busy
+            !fhe.ready
           }
         >
           {disperse.isPending ? (
-            <><LoaderCircle className="animate-spin" size={16} /> Encrypting and confirming…</>
-          ) : !fhe.ready || fhe.busy ? (
-            <><LoaderCircle className="animate-spin" size={16} /> Preparing batch encryption ({recipients.length} recipients)…</>
+            <><LoaderCircle className="animate-spin" size={16} /> Encrypting {recipients.length} amounts — keep tab open…</>
+          ) : !fhe.ready ? (
+            <><LoaderCircle className="animate-spin" size={16} /> Loading privacy engine…</>
           ) : (
             <><ShieldCheck size={16} /> Encrypt & execute distribution</>
           )}
@@ -931,7 +905,7 @@ function AirdropExecution({
         }
       | undefined;
     try {
-      await fhe.ensureReady({ alsoWarm: [token] });
+      await fhe.ensureReady();
       const now = Math.floor(Date.now() / 1000);
       if (startTimestamp <= now || endTimestamp <= now) {
         throw new Error(
@@ -1126,9 +1100,9 @@ function AirdropExecution({
         <Button
           className="mt-6 h-12 w-full rounded-2xl"
           onClick={() => void execute()}
-          disabled={issuing || !fhe.ready || fhe.busy || Boolean(fhe.initError)}
+          disabled={issuing || !fhe.ready || Boolean(fhe.initError)}
         >
-          {issuing ? <><LoaderCircle className="animate-spin" size={16} /> Processing authorizations…</> : !fhe.ready || fhe.busy ? <><LoaderCircle className="animate-spin" size={16} /> Preparing encryption…</> : <><Gift size={16} /> Fund & issue private claims</>}
+          {issuing ? <><LoaderCircle className="animate-spin" size={16} /> Processing authorizations…</> : !fhe.ready ? <><LoaderCircle className="animate-spin" size={16} /> Loading privacy engine…</> : <><Gift size={16} /> Fund & issue private claims</>}
         </Button>
       )}
       <p className="mt-3 text-center text-[11px] leading-5 text-slate-600">
@@ -1138,58 +1112,7 @@ function AirdropExecution({
   );
 }
 
-function FheWarmupBanner({
-  fhe,
-  className,
-}: {
-  fhe: ReturnType<typeof usePrivloFheWarmup>;
-  className?: string;
-}) {
-  if (fhe.ready) {
-    return (
-      <div
-        className={cn(
-          "rounded-xl border border-mint/15 bg-mint/[.04] px-4 py-3 text-xs text-mint",
-          className,
-        )}
-      >
-        Secure encryption ready — you can execute when your campaign is configured.
-      </div>
-    );
-  }
 
-  if (fhe.initError) {
-    return (
-      <div className={cn("space-y-2", className)}>
-        <ErrorNotice message={formatExecutionError(fhe.initError)} />
-        <Button
-          variant="ghost"
-          className="h-9 text-xs"
-          onClick={() => void fhe.retryWarmup()}
-          disabled={fhe.busy}
-        >
-          Retry privacy engine setup
-        </Button>
-      </div>
-    );
-  }
-
-  if (fhe.phase === "idle") return null;
-
-  return (
-    <div
-      className={cn(
-        "flex items-start gap-3 rounded-xl border border-white/[.08] bg-white/[.02] px-4 py-3",
-        className,
-      )}
-    >
-      <LoaderCircle size={16} className="mt-0.5 shrink-0 animate-spin text-mint" />
-      <p className="text-xs leading-5 text-slate-400">
-        {fheWarmupMessage(fhe.phase, fhe.elapsedSec)}
-      </p>
-    </div>
-  );
-}
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return <label className="block"><span className="mb-2 block text-xs font-semibold text-slate-400">{label}</span>{children}</label>;

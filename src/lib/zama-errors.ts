@@ -22,7 +22,7 @@ export function formatExecutionError(error: unknown): string {
   ) {
     const detail = root.message.split("\n")[0];
     if (/timed out/i.test(detail)) {
-      return "Batch encryption timed out. Keep this tab open, wait a few seconds, then click execute again.";
+      return "Encryption timed out. Keep this tab open and click execute again — first-time encrypt can take 1–2 minutes.";
     }
     if (detail && detail !== error.message) {
       return `Encryption failed: ${detail}`;

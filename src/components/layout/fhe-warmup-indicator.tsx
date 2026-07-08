@@ -38,7 +38,7 @@ export function FheWarmupIndicator() {
       title={fheWarmupMessage(warmup.phase, warmup.elapsedSec)}
     >
       <LoaderCircle size={12} className="animate-spin text-mint" />
-      Encrypt setup…
+      Loading…
     </span>
   );
 }
