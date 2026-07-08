@@ -28,7 +28,10 @@ import { sepolia } from "wagmi/chains";
 import { Button } from "../components/ui/button";
 import { ConfidentialBalancePanel } from "../components/wallet/confidential-balance-panel";
 import { PrivacyBadge } from "../components/ui/privacy-badge";
-import { confidentialBalanceQueryKey } from "../hooks/use-confidential-balance";
+import {
+  confidentialBalanceQueryKey,
+  useConfidentialBalance,
+} from "../hooks/use-confidential-balance";
 import { claimsQueryKey, useClaims } from "../hooks/use-claims";
 import { usePrivateClaim } from "../hooks/use-private-claim";
 import {
@@ -61,7 +64,12 @@ export function MyClaimsFlow() {
     [address, walletClient],
   );
   const queryClient = useQueryClient();
-  const claims = useClaims(address, signMessage);
+  const claims = useClaims(address);
+  const confidentialBalance = useConfidentialBalance({
+    tokenAddress: demoTokenAddress ?? undefined,
+    tokenSymbol: "CTTT",
+    decimals: 6,
+  });
   const [importNotice, setImportNotice] = useState<string>();
   const [importError, setImportError] = useState<string>();
 
@@ -110,8 +118,8 @@ export function MyClaimsFlow() {
             My private claims
           </h1>
           <p className="mt-3 text-sm text-slate-500">
-            Confidential allocations sent to your wallet appear here when they are
-            ready to decrypt and claim.
+            Airdrop allocations appear here to decrypt and claim. Direct disperse
+            transfers land in your confidential balance above — no claim ticket.
           </p>
         </div>
         <PrivacyBadge label="Visible only to you" />
@@ -177,19 +185,17 @@ export function MyClaimsFlow() {
               {importError}
             </div>
           )}
-          {inbox?.remoteUnavailable && (
-            <div className="mt-6 rounded-xl border border-amber-400/15 bg-amber-400/[.04] p-3 text-xs leading-5 text-amber-100/80">
-              Remote claim inbox is unavailable. Claims saved on this browser or
-              opened from a creator claim link will still appear here.
-            </div>
-          )}
           <div className="mt-7 flex items-center justify-between">
             <p className="text-sm text-slate-500">
               {pendingClaims.length} pending{" "}
               {pendingClaims.length === 1 ? "claim" : "claims"} for{" "}
               <span className="font-mono text-slate-300">{shortAddress(address)}</span>
             </p>
-            <button onClick={() => void claims.refetch()} className="text-xs font-semibold text-mint">
+            <button
+              type="button"
+              onClick={() => void claims.refetch()}
+              className="text-xs font-semibold text-mint"
+            >
               Refresh inbox
             </button>
           </div>
@@ -204,14 +210,30 @@ export function MyClaimsFlow() {
                 />
               ))}
             </div>
+          ) : !confidentialBalance.isLoading && !confidentialBalance.zeroBalance ? (
+            <DisperseReceivedNotice
+              tokenSymbol={confidentialBalance.symbol}
+              revealedAmount={
+                confidentialBalance.revealedAmount !== undefined &&
+                confidentialBalance.decimals !== undefined
+                  ? formatUnits(
+                      confidentialBalance.revealedAmount,
+                      confidentialBalance.decimals,
+                    )
+                  : undefined
+              }
+              onReveal={() => void confidentialBalance.reveal()}
+              revealing={confidentialBalance.isRevealing}
+              revealError={confidentialBalance.error?.message}
+            />
           ) : (
             <EmptyClaims
-              title="No claims yet"
-              copy="Nothing is waiting for this wallet. After a creator issues a confidential airdrop, your authorization is delivered to this inbox automatically — connect the recipient wallet that was added to the campaign."
+              title="No airdrop claims yet"
+              copy="This inbox is for confidential airdrops that require a recipient claim. Direct disperse campaigns transfer tokens straight into your confidential balance above — no claim ticket appears here."
               hints={[
-                "Use the same recipient wallet the creator added to the campaign.",
-                "New allocations can take a moment — tap Refresh inbox.",
-                "If remote delivery failed, the creator can share a one-time claim link instead.",
+                "Received a direct disperse? Decrypt your confidential balance card above.",
+                "Waiting on an airdrop? Use the same recipient wallet the creator added.",
+                "If remote delivery failed, ask the creator for a one-time claim link.",
               ]}
             />
           )}
@@ -464,6 +486,77 @@ function ClaimCard({
         Reveal and claim are separate onchain authorizations.
       </p>
     </article>
+  );
+}
+
+function DisperseReceivedNotice({
+  tokenSymbol,
+  revealedAmount,
+  onReveal,
+  revealing,
+  revealError,
+}: {
+  tokenSymbol: string;
+  revealedAmount?: string;
+  onReveal: () => void;
+  revealing: boolean;
+  revealError?: string;
+}) {
+  const complete = Boolean(revealedAmount);
+
+  return (
+    <div className="mt-6 rounded-3xl border border-mint/20 bg-mint/[.04] p-8 text-center">
+      <span className="mx-auto grid size-12 place-items-center rounded-2xl bg-mint/10 text-mint">
+        {complete ? <Check size={21} strokeWidth={3} /> : <ShieldCheck size={21} />}
+      </span>
+      <h2 className="mt-5 font-display text-lg font-semibold">
+        {complete ? "Tokens already in your wallet" : "Direct disperse received"}
+      </h2>
+      <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-400">
+        {complete ? (
+          <>
+            You received{" "}
+            <strong className="text-slate-200">
+              {revealedAmount} {tokenSymbol}
+            </strong>{" "}
+            from a direct disperse. Tokens were transferred onchain when the
+            creator executed — there is no separate claim button for this flow.
+          </>
+        ) : (
+          <>
+            Tokens from a direct disperse are already in your confidential
+            balance. Decrypt the balance card above to see your {tokenSymbol}{" "}
+            amount — no claim step is required.
+          </>
+        )}
+      </p>
+      {revealError && (
+        <div
+          role="alert"
+          className="mx-auto mt-4 max-w-md rounded-xl border border-rose-400/15 bg-rose-400/[.04] p-3 text-xs leading-5 text-rose-200"
+        >
+          {revealError}
+        </div>
+      )}
+      {!complete && (
+        <Button
+          onClick={onReveal}
+          disabled={revealing}
+          className="mt-6 h-11 rounded-2xl px-6"
+        >
+          {revealing ? (
+            <>
+              <LoaderCircle className="animate-spin" size={16} /> Authorizing
+              balance reveal…
+            </>
+          ) : (
+            <>
+              <Eye size={16} /> Decrypt confidential balance
+            </>
+          )}
+        </Button>
+      )}
+    </div>
   );
 }
 

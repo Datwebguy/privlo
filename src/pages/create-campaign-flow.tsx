@@ -769,7 +769,13 @@ function DisperseExecution({
 
   if (!address) return <ExecutionNotice message="Connect a Sepolia wallet to continue." />;
   if (disperse.data) {
-    return <ExecutionSuccess hash={disperse.data.hash} onDone={() => navigate("/app/campaigns")} />;
+    return (
+      <ExecutionSuccess
+        hash={disperse.data.hash}
+        recipientNote="Recipients receive tokens directly in their confidential balance. They should open My claims and decrypt the balance card — no claim ticket is created for disperse."
+        onDone={() => navigate("/app/campaigns")}
+      />
+    );
   }
 
   const encrypting = disperse.isPending || encryptAttempt > 0;
@@ -1148,11 +1154,13 @@ function ExecutionNotice({ message }: { message: string }) {
 function ExecutionSuccess({
   hash,
   warning,
+  recipientNote,
   claimLinks = [],
   onDone,
 }: {
   hash: `0x${string}`;
   warning?: string;
+  recipientNote?: string;
   claimLinks?: Array<{ recipient: Address; url: string }>;
   onDone: () => void;
 }) {
@@ -1174,6 +1182,11 @@ function ExecutionSuccess({
         <span className="mx-auto grid size-12 place-items-center rounded-full bg-mint text-[#06241c]"><CheckCircle2 size={23} /></span>
         <h2 className="mt-5 font-display text-2xl font-semibold">Campaign confirmed</h2>
         <p className="mt-2 text-sm text-slate-500">The TokenOps transaction was mined on Sepolia.</p>
+        {recipientNote && (
+          <div className="mx-auto mt-5 max-w-xl rounded-2xl border border-mint/15 bg-mint/[.04] p-4 text-left text-xs leading-5 text-slate-400">
+            {recipientNote}
+          </div>
+        )}
         {claimLinks.length > 0 && (
           <div className="mx-auto mt-5 max-w-xl rounded-2xl border border-mint/15 bg-mint/[.04] p-4 text-left">
             <p className="text-sm font-semibold text-slate-200">

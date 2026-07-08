@@ -12,8 +12,62 @@ import {
 } from "./runtime-validation";
 
 const STORAGE_KEY = "privlo:claim-inbox:v1";
+const VIEW_CLAIMS_SIG_TTL_MS = 60 * 60 * 1000;
 
 export type SignMessageFn = (message: string) => Promise<Hex>;
+
+type CachedViewClaimsSignature = {
+  message: string;
+  signature: Hex;
+  expiresAt: number;
+};
+
+function viewClaimsSignatureKey(recipient: Address) {
+  return `privlo:view-claims-sig:${recipient.toLowerCase()}`;
+}
+
+async function signViewClaimsMessage(
+  recipient: Address,
+  signMessage: SignMessageFn,
+): Promise<Hex> {
+  const message = viewClaimsMessage(recipient);
+  const cacheKey = viewClaimsSignatureKey(recipient);
+
+  if (typeof window !== "undefined") {
+    try {
+      const raw = window.sessionStorage.getItem(cacheKey);
+      if (raw) {
+        const cached = JSON.parse(raw) as CachedViewClaimsSignature;
+        if (
+          cached.message === message &&
+          cached.expiresAt > Date.now() &&
+          typeof cached.signature === "string"
+        ) {
+          return cached.signature;
+        }
+      }
+    } catch {
+      // Ignore corrupt cache entries.
+    }
+  }
+
+  const signature = await signMessage(message);
+
+  if (typeof window !== "undefined") {
+    try {
+      const cached: CachedViewClaimsSignature = {
+        message,
+        signature,
+        expiresAt: Date.now() + VIEW_CLAIMS_SIG_TTL_MS,
+      };
+      window.sessionStorage.setItem(cacheKey, JSON.stringify(cached));
+    } catch {
+      // sessionStorage may be unavailable in private mode.
+    }
+  }
+
+  return signature;
+}
 
 function apiBaseUrl(): string | undefined {
   const configured = import.meta.env.VITE_PRIVLO_API_URL?.trim();
@@ -81,7 +135,7 @@ async function fetchRemoteClaims(
   if (!apiUrl) return [];
 
   const message = viewClaimsMessage(recipient);
-  const signature = await signMessage(message);
+  const signature = await signViewClaimsMessage(recipient, signMessage);
   const response = await fetch(`${apiUrl}/claims/me`, {
     method: "POST",
     headers: {
@@ -103,13 +157,25 @@ export type ClaimsInboxResult = {
   remoteUnavailable: boolean;
 };
 
-export async function getClaims(
+/** Load claims from this browser only — never prompts the wallet. */
+export function getLocalClaimsInbox(recipient: Address): ClaimsInboxResult {
+  const local = readLocalClaims()[recipient.toLowerCase()] ?? [];
+  return { claims: local, remoteUnavailable: false };
+}
+
+/** @deprecated Use getLocalClaimsInbox — remote sync is opt-in via syncRemoteClaimsInbox. */
+export async function getClaims(recipient: Address): Promise<ClaimsInboxResult> {
+  return getLocalClaimsInbox(recipient);
+}
+
+/** Optional cloud inbox sync for airdrops — may prompt the wallet once per session. */
+export async function syncRemoteClaimsInbox(
   recipient: Address,
-  signMessage?: SignMessageFn,
+  signMessage: SignMessageFn,
 ): Promise<ClaimsInboxResult> {
   const local = readLocalClaims()[recipient.toLowerCase()] ?? [];
   const apiUrl = apiBaseUrl();
-  if (!apiUrl || !signMessage) {
+  if (!apiUrl) {
     return { claims: local, remoteUnavailable: false };
   }
 
