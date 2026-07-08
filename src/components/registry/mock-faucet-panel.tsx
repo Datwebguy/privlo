@@ -22,11 +22,13 @@ export function MockFaucetPanel({
   underlyingSymbol = "token",
   decimals = 6,
   confidentialAddress,
+  onMinted,
 }: {
   underlyingAddress: Address;
   underlyingSymbol?: string;
   decimals?: number;
   confidentialAddress: Address;
+  onMinted?: () => void;
 }) {
   const queryClient = useQueryClient();
   const { address, chainId } = useAccount();
@@ -53,6 +55,7 @@ export function MockFaucetPanel({
       void queryClient.invalidateQueries({
         queryKey: confidentialBalanceQueryKey(confidentialAddress, address),
       });
+      onMinted?.();
     } catch (cause) {
       setError(
         cause instanceof Error

@@ -33,7 +33,7 @@ import {
   Trash2,
   Upload,
 } from "lucide-react";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
   getAddress,
@@ -283,7 +283,22 @@ export function CreateCampaignFlow() {
       ? requireFheAirdropFactoryAddress(sepolia.id)
       : requireFheDisperseSingletonAddress(sepolia.id);
   }, [type]);
-  const fhe = usePrivloFheWarmup(warmupContract);
+  const fhe = usePrivloFheWarmup(
+    warmupContract,
+    step === 3 && type === "disperse" && prepared.recipients.length > 0
+      ? { minBatchSize: prepared.recipients.length }
+      : undefined,
+  );
+
+  useEffect(() => {
+    if (step !== 3 || type !== "disperse" || !warmupContract || !address) return;
+    if (prepared.recipients.length === 0) return;
+    void fhe.ensureReady({
+      batchSize: prepared.recipients.length,
+      alsoWarm: validToken ? [getAddress(tokenAddress)] : undefined,
+    }).catch(() => undefined);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- pre-warm once per recipient count
+  }, [address, prepared.recipients.length, step, tokenAddress, type, validToken, warmupContract]);
 
   const detailValid =
     name.trim().length >= 3 &&
@@ -722,7 +737,10 @@ function DisperseExecution({
     if (!address || !wallet.data) return;
     setError(undefined);
     try {
-      await fhe.ensureReady();
+      await fhe.ensureReady({
+        batchSize: recipients.length,
+        alsoWarm: [token],
+      });
       const [activeAccount] = await wallet.data.getAddresses();
       if (!activeAccount || activeAccount.toLowerCase() !== address.toLowerCase()) {
         throw new Error(
@@ -818,7 +836,7 @@ function DisperseExecution({
           {disperse.isPending ? (
             <><LoaderCircle className="animate-spin" size={16} /> Encrypting and confirming…</>
           ) : !fhe.ready || fhe.busy ? (
-            <><LoaderCircle className="animate-spin" size={16} /> Preparing encryption…</>
+            <><LoaderCircle className="animate-spin" size={16} /> Preparing batch encryption ({recipients.length} recipients)…</>
           ) : (
             <><ShieldCheck size={16} /> Encrypt & execute distribution</>
           )}
@@ -913,7 +931,7 @@ function AirdropExecution({
         }
       | undefined;
     try {
-      await fhe.ensureReady();
+      await fhe.ensureReady({ alsoWarm: [token] });
       const now = Math.floor(Date.now() / 1000);
       if (startTimestamp <= now || endTimestamp <= now) {
         throw new Error(

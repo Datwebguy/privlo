@@ -1,4 +1,5 @@
 import {
+  getConfidentialTestTokenAddress,
   requireFheAirdropFactoryAddress,
   requireFheDisperseSingletonAddress,
 } from "@tokenops/sdk";
@@ -19,46 +20,94 @@ import { useAccount } from "wagmi";
 import { sepolia } from "wagmi/chains";
 import {
   fheWarmupMessage,
+  normalizeWarmupBatchSize,
   type FheWarmupPhase,
   waitForRelayerReady,
+  warmBatchEncrypt,
   warmContractEncrypt,
 } from "../hooks/use-fhe-ready";
+
+type WarmupOptions = {
+  batchSize?: number;
+};
 
 type FheWarmupContextValue = {
   phase: FheWarmupPhase;
   elapsedSec: number;
   initError?: Error;
   busy: boolean;
-  isContractReady: (contractAddress?: Address) => boolean;
-  ensureContractReady: (contractAddress: Address) => Promise<void>;
+  isContractReady: (contractAddress?: Address, minBatchSize?: number) => boolean;
+  ensureContractReady: (
+    contractAddress: Address,
+    options?: WarmupOptions,
+  ) => Promise<void>;
   retryBootstrap: () => void;
 };
 
 const FheWarmupContext = createContext<FheWarmupContextValue | null>(null);
 
-function tokenOpsWarmupContracts(): Address[] {
-  return [
-    requireFheDisperseSingletonAddress(sepolia.id),
-    requireFheAirdropFactoryAddress(sepolia.id),
+function tokenOpsWarmupContracts(): Array<{
+  contractAddress: Address;
+  batchSize: number;
+}> {
+  const contracts: Array<{ contractAddress: Address; batchSize: number }> = [
+    {
+      contractAddress: requireFheDisperseSingletonAddress(sepolia.id),
+      batchSize: 3,
+    },
+    {
+      contractAddress: requireFheAirdropFactoryAddress(sepolia.id),
+      batchSize: 1,
+    },
   ];
+
+  const demoToken = getConfidentialTestTokenAddress(sepolia.id);
+  if (demoToken) {
+    contracts.push({ contractAddress: demoToken, batchSize: 1 });
+  }
+
+  return contracts;
 }
 
 export function FheWarmupProvider({ children }: PropsWithChildren) {
   const { address } = useAccount();
   const zamaSDK = useZamaSDK();
   const relayer = zamaSDK.relayer as RelayerWeb;
-  const warmedContractsRef = useRef(new Set<string>());
+  const warmedBatchSizesRef = useRef(new Map<string, number>());
   const bootstrappingRef = useRef(false);
   const [phase, setPhase] = useState<FheWarmupPhase>("idle");
   const [elapsedSec, setElapsedSec] = useState(0);
   const [initError, setInitError] = useState<Error>();
   const [warmVersion, setWarmVersion] = useState(0);
 
+  const warmContract = useCallback(
+    async (
+      contractAddress: Address,
+      userAddress: Address,
+      batchSize = 1,
+    ): Promise<void> => {
+      const target = { contractAddress, userAddress };
+      const normalizedBatch = normalizeWarmupBatchSize(batchSize);
+      if (normalizedBatch > 1) {
+        await warmBatchEncrypt(relayer, target, normalizedBatch);
+      } else {
+        await warmContractEncrypt(relayer, target);
+      }
+      const key = contractAddress.toLowerCase();
+      const previous = warmedBatchSizesRef.current.get(key) ?? 0;
+      warmedBatchSizesRef.current.set(
+        key,
+        Math.max(previous, normalizedBatch),
+      );
+    },
+    [relayer],
+  );
+
   const runBootstrap = useCallback(async () => {
     if (!address || bootstrappingRef.current) return;
 
     bootstrappingRef.current = true;
-    warmedContractsRef.current = new Set();
+    warmedBatchSizesRef.current = new Map();
     setInitError(undefined);
     setPhase(relayer.status === "ready" ? "warming" : "initializing");
 
@@ -69,18 +118,14 @@ export function FheWarmupProvider({ children }: PropsWithChildren) {
       setPhase("warming");
       await relayer.generateKeypair();
 
-      for (const contractAddress of tokenOpsWarmupContracts()) {
-        await warmContractEncrypt(relayer, {
-          contractAddress,
-          userAddress: address,
-        });
-        warmedContractsRef.current.add(contractAddress.toLowerCase());
+      for (const item of tokenOpsWarmupContracts()) {
+        await warmContract(item.contractAddress, address, item.batchSize);
       }
 
       setPhase("ready");
       setInitError(undefined);
     } catch (cause) {
-      warmedContractsRef.current = new Set();
+      warmedBatchSizesRef.current = new Map();
       setPhase("error");
       setInitError(
         cause instanceof Error
@@ -92,11 +137,11 @@ export function FheWarmupProvider({ children }: PropsWithChildren) {
       setElapsedSec(Math.floor((Date.now() - started) / 1000));
       setWarmVersion((value) => value + 1);
     }
-  }, [address, relayer]);
+  }, [address, relayer, warmContract]);
 
   useEffect(() => {
     if (!address) {
-      warmedContractsRef.current = new Set();
+      warmedBatchSizesRef.current = new Map();
       setPhase("idle");
       setInitError(undefined);
       setElapsedSec(0);
@@ -115,23 +160,29 @@ export function FheWarmupProvider({ children }: PropsWithChildren) {
   }, [phase]);
 
   const isContractReady = useCallback(
-    (contractAddress?: Address) => {
-      if (!contractAddress) return phase === "ready" && !initError;
+    (contractAddress?: Address, minBatchSize = 1) => {
+      if (!contractAddress) {
+        return phase === "ready" && !initError;
+      }
+      const warmedBatch =
+        warmedBatchSizesRef.current.get(contractAddress.toLowerCase()) ?? 0;
       return (
         phase === "ready" &&
         !initError &&
-        warmedContractsRef.current.has(contractAddress.toLowerCase())
+        warmedBatch >= normalizeWarmupBatchSize(minBatchSize)
       );
     },
     [initError, phase, warmVersion],
   );
 
   const ensureContractReady = useCallback(
-    async (contractAddress: Address) => {
+    async (contractAddress: Address, options?: WarmupOptions) => {
       if (!address) {
         throw new Error("Connect a wallet to prepare confidential encryption.");
       }
-      if (isContractReady(contractAddress)) return;
+
+      const requiredBatch = normalizeWarmupBatchSize(options?.batchSize ?? 1);
+      if (isContractReady(contractAddress, requiredBatch)) return;
 
       if (phase === "error") {
         await runBootstrap();
@@ -143,15 +194,12 @@ export function FheWarmupProvider({ children }: PropsWithChildren) {
         }
       }
 
-      if (!warmedContractsRef.current.has(contractAddress.toLowerCase())) {
+      if (!isContractReady(contractAddress, requiredBatch)) {
         setPhase("warming");
         try {
-          await warmContractEncrypt(relayer, {
-            contractAddress,
-            userAddress: address,
-          });
-          warmedContractsRef.current.add(contractAddress.toLowerCase());
+          await warmContract(contractAddress, address, requiredBatch);
           setPhase("ready");
+          setInitError(undefined);
         } catch (cause) {
           setPhase("error");
           const error =
@@ -165,7 +213,7 @@ export function FheWarmupProvider({ children }: PropsWithChildren) {
         }
       }
     },
-    [address, isContractReady, phase, relayer, runBootstrap],
+    [address, isContractReady, phase, relayer, runBootstrap, warmContract],
   );
 
   const value = useMemo<FheWarmupContextValue>(
@@ -195,29 +243,55 @@ export function FheWarmupProvider({ children }: PropsWithChildren) {
   );
 }
 
-export function usePrivloFheWarmup(contractAddress?: Address) {
+type EnsureReadyOptions = WarmupOptions & {
+  alsoWarm?: Address[];
+};
+
+export function usePrivloFheWarmup(
+  contractAddress?: Address,
+  options?: { minBatchSize?: number },
+) {
   const context = useContext(FheWarmupContext);
   if (!context) {
     throw new Error("usePrivloFheWarmup must be used within FheWarmupProvider");
   }
 
-  const ready = context.isContractReady(contractAddress);
-  const ensureReady = useCallback(async () => {
-    if (!contractAddress) {
-      throw new Error("A TokenOps contract is required before encryption.");
-    }
-    await context.ensureContractReady(contractAddress);
-  }, [context, contractAddress]);
+  const minBatchSize = normalizeWarmupBatchSize(options?.minBatchSize ?? 1);
+  const ready = context.isContractReady(contractAddress, minBatchSize);
+  const ensureReady = useCallback(
+    async (ensureOptions?: EnsureReadyOptions) => {
+      if (contractAddress) {
+        await context.ensureContractReady(contractAddress, {
+          batchSize: ensureOptions?.batchSize ?? minBatchSize,
+        });
+      }
+      for (const address of ensureOptions?.alsoWarm ?? []) {
+        await context.ensureContractReady(address);
+      }
+    },
+    [context, contractAddress, minBatchSize],
+  );
 
-  return {
-    ready,
-    busy: context.busy,
-    phase: context.phase,
-    elapsedSec: context.elapsedSec,
-    initError: context.initError,
-    ensureReady,
-    retryWarmup: context.retryBootstrap,
-  };
+  return useMemo(
+    () => ({
+      ready,
+      busy: context.busy,
+      phase: context.phase,
+      elapsedSec: context.elapsedSec,
+      initError: context.initError,
+      ensureReady,
+      retryWarmup: context.retryBootstrap,
+    }),
+    [
+      context.busy,
+      context.elapsedSec,
+      context.initError,
+      context.phase,
+      context.retryBootstrap,
+      ensureReady,
+      ready,
+    ],
+  );
 }
 
 export function useFheWarmupStatus() {

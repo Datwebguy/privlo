@@ -22,7 +22,7 @@ export function formatExecutionError(error: unknown): string {
   ) {
     const detail = root.message.split("\n")[0];
     if (/timed out/i.test(detail)) {
-      return "Encryption timed out. Wait for the header badge to show “Ready”, then try again.";
+      return "Batch encryption timed out. Keep this tab open, wait a few seconds, then click execute again.";
     }
     if (detail && detail !== error.message) {
       return `Encryption failed: ${detail}`;
@@ -35,10 +35,20 @@ export function formatExecutionError(error: unknown): string {
 export function formatZamaError(error: Error) {
   const message = matchZamaError(error, {
     SIGNING_REJECTED: () =>
-      "Wallet signature was rejected. Approve the request to reveal your balance.",
+      "Wallet signature was rejected. Approve every wallet prompt to continue.",
     ENCRYPTION_FAILED: () => "Encryption failed. Refresh and try again.",
     DECRYPTION_FAILED: () =>
       "Decryption failed. Confirm you are on Sepolia and try again.",
+    APPROVAL_FAILED: () =>
+      "Token approval failed. Confirm the approval in your wallet, then retry.",
+    TRANSACTION_REVERTED: () =>
+      "Transaction reverted on-chain. Check your balance and try a smaller amount.",
+    INSUFFICIENT_ERC20_BALANCE: () =>
+      "Insufficient public token balance. Mint or fund more underlying tokens first.",
+    INSUFFICIENT_CONFIDENTIAL_BALANCE: () =>
+      "Insufficient confidential balance. Wrap more tokens or lower the amount.",
+    BALANCE_CHECK_UNAVAILABLE: () =>
+      "Could not read your confidential balance yet. Wait for encryption to finish, then retry.",
     CONFIGURATION: () =>
       "FHE worker could not start. Hard refresh the page; if it persists, try another browser.",
     RELAYER_REQUEST_FAILED: () =>

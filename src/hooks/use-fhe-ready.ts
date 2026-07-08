@@ -20,6 +20,13 @@ export type FheWarmupPhase =
 const WARMUP_MAX_ATTEMPTS = 4;
 const RELAYER_READY_TIMEOUT_MS = 120_000;
 const WARMUP_RETRY_DELAY_MS = 2_500;
+const WARMUP_MAX_BATCH_SIZE = 64;
+
+export function normalizeWarmupBatchSize(batchSize = 1) {
+  const size = Math.floor(batchSize);
+  if (!Number.isFinite(size) || size < 1) return 1;
+  return Math.min(size, WARMUP_MAX_BATCH_SIZE);
+}
 
 function sleep(ms: number) {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
@@ -76,6 +83,43 @@ export async function warmContractEncrypt(
   throw lastError instanceof Error
     ? lastError
     : new Error("Could not initialize confidential encryption.");
+}
+
+/** Warm batch encryption — matches TokenOps disperse `encryptUint64Batch`. */
+export async function warmBatchEncrypt(
+  relayer: RelayerWeb,
+  target: FheWarmupTarget,
+  batchSize = 3,
+): Promise<void> {
+  const size = normalizeWarmupBatchSize(batchSize);
+  await warmContractEncrypt(relayer, target);
+  if (size <= 1) return;
+
+  let lastError: unknown;
+  for (let attempt = 0; attempt < WARMUP_MAX_ATTEMPTS; attempt += 1) {
+    try {
+      await relayer.encrypt({
+        values: Array.from({ length: size }, () => ({
+          value: 1n,
+          type: "euint64",
+        })),
+        contractAddress: target.contractAddress,
+        userAddress: target.userAddress,
+      });
+      return;
+    } catch (cause) {
+      lastError = cause;
+      if (isEncryptTimeout(cause) && attempt < WARMUP_MAX_ATTEMPTS - 1) {
+        await sleep(WARMUP_RETRY_DELAY_MS * (attempt + 1));
+        continue;
+      }
+      throw cause;
+    }
+  }
+
+  throw lastError instanceof Error
+    ? lastError
+    : new Error("Could not initialize batch confidential encryption.");
 }
 
 /** Full warmup: worker ready + keypair + encrypt (used for isolated flows). */
