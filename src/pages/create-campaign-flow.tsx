@@ -58,7 +58,7 @@ import { ConfidentialBalancePanel } from "../components/wallet/confidential-bala
 import { PrivacyBadge } from "../components/ui/privacy-badge";
 import { campaignQueryKey } from "../hooks/use-campaigns";
 import { confidentialBalanceQueryKey } from "../hooks/use-confidential-balance";
-import { useFheReady } from "../hooks/use-fhe-ready";
+import { fheWarmupMessage, useFheReady } from "../hooks/use-fhe-ready";
 import { formatExecutionError } from "../lib/zama-errors";
 
 import { saveCampaign } from "../lib/campaign-repository";
@@ -274,6 +274,15 @@ export function CreateCampaignFlow() {
     (sum, recipient) => sum + recipient.amount,
     0n,
   );
+  const fheWarmupTarget = useMemo(() => {
+    if (!address || type === "vesting") return undefined;
+    const contractAddress =
+      type === "airdrop"
+        ? requireFheAirdropFactoryAddress(sepolia.id)
+        : requireFheDisperseSingletonAddress(sepolia.id);
+    return { contractAddress, userAddress: address };
+  }, [address, type]);
+  const fhe = useFheReady(fheWarmupTarget);
 
   const detailValid =
     name.trim().length >= 3 &&
@@ -574,6 +583,10 @@ export function CreateCampaignFlow() {
         </section>
       )}
 
+      {address && type !== "vesting" && (
+        <FheWarmupBanner fhe={fhe} className="mt-6" />
+      )}
+
       {step === 3 && metadata && (
         <section className="mt-8 space-y-5">
           {address && (
@@ -599,6 +612,7 @@ export function CreateCampaignFlow() {
               recipients={prepared.recipients}
               startTimestamp={Math.floor(Date.parse(startTime) / 1000)}
               endTimestamp={Math.floor(Date.parse(endTime) / 1000)}
+              fhe={fhe}
             />
           ) : (
             <DisperseExecution
@@ -607,6 +621,7 @@ export function CreateCampaignFlow() {
               tokenSymbol={metadata.symbol}
               decimals={metadata.decimals}
               recipients={prepared.recipients}
+              fhe={fhe}
             />
           )}
         </section>
@@ -648,21 +663,18 @@ function DisperseExecution({
   tokenSymbol,
   decimals,
   recipients,
+  fhe,
 }: {
   name: string;
   token: Address;
   tokenSymbol: string;
   decimals: number;
   recipients: PreparedRecipient[];
+  fhe: ReturnType<typeof useFheReady>;
 }) {
   const { address } = useAccount();
   const zamaSDK = useZamaSDK();
   const singleton = requireFheDisperseSingletonAddress(sepolia.id);
-  const fhe = useFheReady(
-    address
-      ? { contractAddress: singleton, userAddress: address }
-      : undefined,
-  );
   const publicClient = usePublicClient({ chainId: sepolia.id });
   const wallet = useWalletClient({ chainId: sepolia.id });
   const queryClient = useQueryClient();
@@ -709,6 +721,7 @@ function DisperseExecution({
     if (!address || !wallet.data) return;
     setError(undefined);
     try {
+      await fhe.ensureReady();
       const [activeAccount] = await wallet.data.getAddresses();
       if (!activeAccount || activeAccount.toLowerCase() !== address.toLowerCase()) {
         throw new Error(
@@ -741,6 +754,12 @@ function DisperseExecution({
         queryKey: confidentialBalanceQueryKey(token, address),
       });
     } catch (cause) {
+      if (
+        cause instanceof Error &&
+        /timed out|timeout/i.test(cause.message)
+      ) {
+        void fhe.retryWarmup();
+      }
       setError(formatExecutionError(cause));
     }
   }
@@ -776,13 +795,6 @@ function DisperseExecution({
       {preflight.isLoading && <p className="mt-4 text-xs text-slate-500">Running TokenOps preflight checks…</p>}
       {preflight.error && <ErrorNotice message={preflight.error.message} />}
       {error && <ErrorNotice message={error} />}
-      {!fhe.ready && !fhe.initError && (
-        <p className="mt-4 flex items-center gap-2 text-xs text-slate-500">
-          <LoaderCircle size={14} className="animate-spin text-mint" />
-          Preparing privacy engine… first visit can take up to 90 seconds. Do
-          not click execute until this finishes.
-        </p>
-      )}
       {fhe.initError && (
         <ErrorNotice message={formatExecutionError(fhe.initError)} />
       )}
@@ -826,6 +838,7 @@ function AirdropExecution({
   recipients,
   startTimestamp,
   endTimestamp,
+  fhe,
 }: {
   name: string;
   token: Address;
@@ -834,15 +847,11 @@ function AirdropExecution({
   recipients: PreparedRecipient[];
   startTimestamp: number;
   endTimestamp: number;
+  fhe: ReturnType<typeof useFheReady>;
 }) {
   const { address } = useAccount();
   const zamaSDK = useZamaSDK();
   const factory = requireFheAirdropFactoryAddress(sepolia.id);
-  const fhe = useFheReady(
-    address
-      ? { contractAddress: factory, userAddress: address }
-      : undefined,
-  );
   const publicClient = usePublicClient({ chainId: sepolia.id });
   const wallet = useWalletClient({ chainId: sepolia.id });
   const queryClient = useQueryClient();
@@ -903,6 +912,7 @@ function AirdropExecution({
         }
       | undefined;
     try {
+      await fhe.ensureReady();
       const now = Math.floor(Date.now() / 1000);
       if (startTimestamp <= now || endTimestamp <= now) {
         throw new Error(
@@ -1035,6 +1045,12 @@ function AirdropExecution({
           "The airdrop was funded onchain, but authorization generation was interrupted. Do not fund it again; recover or withdraw the remaining pool from the TokenOps airdrop contract.",
         );
       } else {
+        if (
+          cause instanceof Error &&
+          /timed out|timeout/i.test(cause.message)
+        ) {
+          void fhe.retryWarmup();
+        }
         setError(formatExecutionError(cause));
       }
     } finally {
@@ -1082,12 +1098,6 @@ function AirdropExecution({
       />
       {error && <ErrorNotice message={error} />}
       {progress && <p className="mt-4 text-xs text-mint">{progress}</p>}
-      {!fhe.ready && !fhe.initError && (
-        <p className="mt-4 flex items-center gap-2 text-xs text-slate-500">
-          <LoaderCircle size={14} className="animate-spin text-mint" />
-          Preparing privacy engine… first visit can take up to 90 seconds.
-        </p>
-      )}
       {fhe.initError && <ErrorNotice message={formatExecutionError(fhe.initError)} />}
       {!operator.data ? (
         <Button className="mt-6 h-12 w-full rounded-2xl" onClick={() => void approve()} disabled={approving || operator.isLoading}>
@@ -1106,6 +1116,59 @@ function AirdropExecution({
         Your wallet signs one recipient-bound authorization per allocation.
       </p>
     </ExecutionPanel>
+  );
+}
+
+function FheWarmupBanner({
+  fhe,
+  className,
+}: {
+  fhe: ReturnType<typeof useFheReady>;
+  className?: string;
+}) {
+  if (fhe.ready) {
+    return (
+      <div
+        className={cn(
+          "rounded-xl border border-mint/15 bg-mint/[.04] px-4 py-3 text-xs text-mint",
+          className,
+        )}
+      >
+        Privacy engine ready — encryption will be faster now.
+      </div>
+    );
+  }
+
+  if (fhe.initError) {
+    return (
+      <div className={cn("space-y-2", className)}>
+        <ErrorNotice message={formatExecutionError(fhe.initError)} />
+        <Button
+          variant="ghost"
+          className="h-9 text-xs"
+          onClick={() => void fhe.retryWarmup()}
+          disabled={fhe.busy}
+        >
+          Retry privacy engine setup
+        </Button>
+      </div>
+    );
+  }
+
+  if (fhe.phase === "idle") return null;
+
+  return (
+    <div
+      className={cn(
+        "flex items-start gap-3 rounded-xl border border-white/[.08] bg-white/[.02] px-4 py-3",
+        className,
+      )}
+    >
+      <LoaderCircle size={16} className="mt-0.5 shrink-0 animate-spin text-mint" />
+      <p className="text-xs leading-5 text-slate-400">
+        {fheWarmupMessage(fhe.phase, fhe.elapsedSec)}
+      </p>
+    </div>
   );
 }
 

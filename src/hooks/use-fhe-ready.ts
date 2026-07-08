@@ -1,6 +1,6 @@
 import { useZamaSDK } from "@zama-fhe/react-sdk";
 import type { RelayerWeb } from "@zama-fhe/sdk";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { Address } from "viem";
 
 type RelayerSDKStatus = "idle" | "initializing" | "ready" | "error";
@@ -9,6 +9,77 @@ export type FheWarmupTarget = {
   contractAddress: Address;
   userAddress: Address;
 };
+
+export type FheWarmupPhase =
+  | "idle"
+  | "initializing"
+  | "warming"
+  | "ready"
+  | "error";
+
+const WARMUP_MAX_ATTEMPTS = 4;
+const RELAYER_READY_TIMEOUT_MS = 120_000;
+const WARMUP_RETRY_DELAY_MS = 2_500;
+
+function sleep(ms: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+function isEncryptTimeout(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const message = error.message.toLowerCase();
+  return message.includes("timed out") || message.includes("timeout");
+}
+
+async function waitForRelayerReady(
+  relayer: RelayerWeb,
+  timeoutMs = RELAYER_READY_TIMEOUT_MS,
+): Promise<void> {
+  const started = Date.now();
+  while (Date.now() - started < timeoutMs) {
+    const current = relayer.status;
+    if (current === "ready") return;
+    if (current === "error") {
+      throw relayer.initError ?? new Error("FHE worker failed to initialize.");
+    }
+    await sleep(400);
+  }
+
+  throw new Error(
+    "Privacy engine is still loading. Keep this tab open and wait up to 2 minutes, then refresh if needed.",
+  );
+}
+
+export async function warmFheEncryption(
+  relayer: RelayerWeb,
+  target: FheWarmupTarget,
+): Promise<void> {
+  await waitForRelayerReady(relayer);
+
+  let lastError: unknown;
+  for (let attempt = 0; attempt < WARMUP_MAX_ATTEMPTS; attempt += 1) {
+    try {
+      await relayer.generateKeypair();
+      await relayer.encrypt({
+        values: [{ value: 1n, type: "euint64" }],
+        contractAddress: target.contractAddress,
+        userAddress: target.userAddress,
+      });
+      return;
+    } catch (cause) {
+      lastError = cause;
+      if (isEncryptTimeout(cause) && attempt < WARMUP_MAX_ATTEMPTS - 1) {
+        await sleep(WARMUP_RETRY_DELAY_MS * (attempt + 1));
+        continue;
+      }
+      throw cause;
+    }
+  }
+
+  throw lastError instanceof Error
+    ? lastError
+    : new Error("Could not initialize confidential encryption.");
+}
 
 /**
  * Warms the Zama FHE worker before TokenOps encrypt.
@@ -19,70 +90,122 @@ export function useFheReady(target?: FheWarmupTarget) {
   const zamaSDK = useZamaSDK();
   const relayer = zamaSDK.relayer as RelayerWeb;
   const warmedRef = useRef(false);
+  const warmingRef = useRef(false);
   const [status, setStatus] = useState<RelayerSDKStatus>(() => relayer.status);
   const [initError, setInitError] = useState<Error | undefined>(
     () => relayer.initError,
   );
-  const [warming, setWarming] = useState(false);
-  const [ready, setReady] = useState(() => relayer.status === "ready");
+  const [phase, setPhase] = useState<FheWarmupPhase>(() =>
+    warmedRef.current ? "ready" : "idle",
+  );
+  const [elapsedSec, setElapsedSec] = useState(0);
 
   useEffect(() => {
     setStatus(relayer.status);
-    setInitError(relayer.initError);
-    if (relayer.status === "ready") setReady(true);
-  }, [relayer]);
+    setInitError(relayer.initError ?? undefined);
+  }, [relayer, relayer.status, relayer.initError]);
 
   useEffect(() => {
     const interval = window.setInterval(() => {
       setStatus(relayer.status);
       setInitError(relayer.initError ?? undefined);
-      if (relayer.status === "ready") setReady(true);
     }, 400);
     return () => window.clearInterval(interval);
   }, [relayer]);
 
-  useEffect(() => {
-    if (!target || warmedRef.current) return;
-    let cancelled = false;
-    setWarming(true);
-    setReady(false);
+  const runWarmup = useCallback(
+    async (force = false) => {
+      if (!target) return;
+      if (warmedRef.current && !force) return;
+      if (warmingRef.current) return;
 
-    async function warmup() {
-      const warmupTarget = target;
-      if (!warmupTarget) return;
+      warmingRef.current = true;
+      setInitError(undefined);
+      setPhase(
+        relayer.status === "ready" ? "warming" : "initializing",
+      );
+      const started = Date.now();
+
       try {
-        await relayer.generateKeypair();
-        await relayer.encrypt({
-          values: [{ value: 1n, type: "euint64" }],
-          contractAddress: warmupTarget.contractAddress,
-          userAddress: warmupTarget.userAddress,
-        });
-        if (!cancelled) {
-          warmedRef.current = true;
-          setReady(true);
-          setInitError(undefined);
-        }
+        setPhase(
+          relayer.status === "ready" ? "warming" : "initializing",
+        );
+        await warmFheEncryption(relayer, target);
+        warmedRef.current = true;
+        setPhase("ready");
+        setInitError(undefined);
       } catch (cause) {
-        if (!cancelled) {
-          setInitError(
-            cause instanceof Error
-              ? cause
-              : new Error("Could not initialize confidential encryption."),
-          );
-          setReady(false);
-        }
+        warmedRef.current = false;
+        setPhase("error");
+        setInitError(
+          cause instanceof Error
+            ? cause
+            : new Error("Could not initialize confidential encryption."),
+        );
       } finally {
-        if (!cancelled) setWarming(false);
+        warmingRef.current = false;
+        setElapsedSec(Math.floor((Date.now() - started) / 1000));
       }
+    },
+    [relayer, target],
+  );
+
+  useEffect(() => {
+    if (!target) {
+      warmedRef.current = false;
+      setPhase("idle");
+      return;
     }
 
-    void warmup();
-    return () => {
-      cancelled = true;
-    };
-  }, [relayer, target?.contractAddress, target?.userAddress]);
+    warmedRef.current = false;
+    setPhase("idle");
+    void runWarmup();
+  }, [target?.contractAddress, target?.userAddress, runWarmup]);
 
-  const busy = warming || status === "initializing";
+  useEffect(() => {
+    if (phase !== "initializing" && phase !== "warming") return;
+    const started = Date.now();
+    const timer = window.setInterval(() => {
+      setElapsedSec(Math.floor((Date.now() - started) / 1000));
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [phase]);
 
-  return { ready: ready && !initError, busy, status, initError, relayer };
+  const ensureReady = useCallback(async () => {
+    if (!target) {
+      throw new Error("Connect a wallet to prepare confidential encryption.");
+    }
+    if (warmedRef.current) return;
+    await runWarmup(true);
+    if (!warmedRef.current) {
+      throw initError ?? new Error("Privacy engine is not ready yet.");
+    }
+  }, [initError, runWarmup, target]);
+
+  const busy =
+    phase === "initializing" ||
+    phase === "warming" ||
+    status === "initializing";
+
+  return {
+    ready: phase === "ready" && !initError,
+    busy,
+    phase,
+    elapsedSec,
+    status,
+    initError,
+    relayer,
+    ensureReady,
+    retryWarmup: () => runWarmup(true),
+  };
+}
+
+export function fheWarmupMessage(phase: FheWarmupPhase, elapsedSec: number) {
+  if (phase === "initializing") {
+    return `Loading privacy engine (step 1 of 2)… ${elapsedSec}s. First visit can take 1–2 minutes — keep this tab open.`;
+  }
+  if (phase === "warming") {
+    return `Warming encryption (step 2 of 2)… ${elapsedSec}s. Do not execute until this finishes.`;
+  }
+  return "";
 }
