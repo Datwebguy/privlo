@@ -10,6 +10,7 @@ import { Logo } from "../brand/logo";
 import { PrivacyNetworkBackground } from "../effects/privacy-network-background";
 import { cn } from "../../lib/utils";
 import { ConnectButton } from "../wallet/connect-button";
+import { FheWarmupIndicator } from "./fhe-warmup-indicator";
 
 const navigation = [
   { to: "/app", label: "Registry", icon: Shield, end: true },
@@ -56,6 +57,7 @@ export function AppShell() {
           </nav>
 
           <div className="flex items-center gap-2">
+            <FheWarmupIndicator />
             <a
               href="https://github.com/Datwebguy/privlo#how-to-use-privlo"
               target="_blank"

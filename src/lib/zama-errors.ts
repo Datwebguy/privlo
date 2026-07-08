@@ -22,7 +22,7 @@ export function formatExecutionError(error: unknown): string {
   ) {
     const detail = root.message.split("\n")[0];
     if (/timed out/i.test(detail)) {
-      return "Encryption timed out. Wait for the green “Privacy engine ready” banner (first visit can take 1–2 minutes), then try again.";
+      return "Encryption timed out. Wait for the header badge to show “Ready”, then try again.";
     }
     if (detail && detail !== error.message) {
       return `Encryption failed: ${detail}`;

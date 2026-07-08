@@ -9,6 +9,7 @@ import { useMemo, useState, type PropsWithChildren } from "react";
 import { sepolia } from "wagmi/chains";
 import { useAccount, WagmiProvider, type Config } from "wagmi";
 import { createPrivloWagmiConfig } from "../config/create-wagmi-config";
+import { FheWarmupProvider } from "./fhe-warmup-provider";
 import { WagmiConfigContext, useWagmiConfig } from "./wagmi-config-context";
 
 function ZamaConnected({ children }: PropsWithChildren) {
@@ -46,7 +47,7 @@ function ZamaConnected({ children }: PropsWithChildren) {
       storage={indexedDBStorage}
       sessionTTL={60 * 60}
     >
-      {children}
+      <FheWarmupProvider>{children}</FheWarmupProvider>
     </ZamaProvider>
   );
 }

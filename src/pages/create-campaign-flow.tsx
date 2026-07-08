@@ -58,7 +58,10 @@ import { ConfidentialBalancePanel } from "../components/wallet/confidential-bala
 import { PrivacyBadge } from "../components/ui/privacy-badge";
 import { campaignQueryKey } from "../hooks/use-campaigns";
 import { confidentialBalanceQueryKey } from "../hooks/use-confidential-balance";
-import { fheWarmupMessage, useFheReady } from "../hooks/use-fhe-ready";
+import {
+  fheWarmupMessage,
+  usePrivloFheWarmup,
+} from "../providers/fhe-warmup-provider";
 import { formatExecutionError } from "../lib/zama-errors";
 
 import { saveCampaign } from "../lib/campaign-repository";
@@ -274,15 +277,13 @@ export function CreateCampaignFlow() {
     (sum, recipient) => sum + recipient.amount,
     0n,
   );
-  const fheWarmupTarget = useMemo(() => {
-    if (!address || type === "vesting") return undefined;
-    const contractAddress =
-      type === "airdrop"
-        ? requireFheAirdropFactoryAddress(sepolia.id)
-        : requireFheDisperseSingletonAddress(sepolia.id);
-    return { contractAddress, userAddress: address };
-  }, [address, type]);
-  const fhe = useFheReady(fheWarmupTarget);
+  const warmupContract = useMemo(() => {
+    if (type === "vesting") return undefined;
+    return type === "airdrop"
+      ? requireFheAirdropFactoryAddress(sepolia.id)
+      : requireFheDisperseSingletonAddress(sepolia.id);
+  }, [type]);
+  const fhe = usePrivloFheWarmup(warmupContract);
 
   const detailValid =
     name.trim().length >= 3 &&
@@ -670,7 +671,7 @@ function DisperseExecution({
   tokenSymbol: string;
   decimals: number;
   recipients: PreparedRecipient[];
-  fhe: ReturnType<typeof useFheReady>;
+  fhe: ReturnType<typeof usePrivloFheWarmup>;
 }) {
   const { address } = useAccount();
   const zamaSDK = useZamaSDK();
@@ -847,7 +848,7 @@ function AirdropExecution({
   recipients: PreparedRecipient[];
   startTimestamp: number;
   endTimestamp: number;
-  fhe: ReturnType<typeof useFheReady>;
+  fhe: ReturnType<typeof usePrivloFheWarmup>;
 }) {
   const { address } = useAccount();
   const zamaSDK = useZamaSDK();
@@ -1123,7 +1124,7 @@ function FheWarmupBanner({
   fhe,
   className,
 }: {
-  fhe: ReturnType<typeof useFheReady>;
+  fhe: ReturnType<typeof usePrivloFheWarmup>;
   className?: string;
 }) {
   if (fhe.ready) {
@@ -1134,7 +1135,7 @@ function FheWarmupBanner({
           className,
         )}
       >
-        Privacy engine ready — encryption will be faster now.
+        Secure encryption ready — you can execute when your campaign is configured.
       </div>
     );
   }

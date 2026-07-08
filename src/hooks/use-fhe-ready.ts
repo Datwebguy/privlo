@@ -31,7 +31,7 @@ function isEncryptTimeout(error: unknown): boolean {
   return message.includes("timed out") || message.includes("timeout");
 }
 
-async function waitForRelayerReady(
+export async function waitForRelayerReady(
   relayer: RelayerWeb,
   timeoutMs = RELAYER_READY_TIMEOUT_MS,
 ): Promise<void> {
@@ -46,20 +46,17 @@ async function waitForRelayerReady(
   }
 
   throw new Error(
-    "Privacy engine is still loading. Keep this tab open and wait up to 2 minutes, then refresh if needed.",
+    "Secure encryption is still loading. Keep this tab open, then refresh if needed.",
   );
 }
 
-export async function warmFheEncryption(
+export async function warmContractEncrypt(
   relayer: RelayerWeb,
   target: FheWarmupTarget,
 ): Promise<void> {
-  await waitForRelayerReady(relayer);
-
   let lastError: unknown;
   for (let attempt = 0; attempt < WARMUP_MAX_ATTEMPTS; attempt += 1) {
     try {
-      await relayer.generateKeypair();
       await relayer.encrypt({
         values: [{ value: 1n, type: "euint64" }],
         contractAddress: target.contractAddress,
@@ -81,10 +78,37 @@ export async function warmFheEncryption(
     : new Error("Could not initialize confidential encryption.");
 }
 
+/** Full warmup: worker ready + keypair + encrypt (used for isolated flows). */
+export async function warmFheEncryption(
+  relayer: RelayerWeb,
+  target: FheWarmupTarget,
+): Promise<void> {
+  await waitForRelayerReady(relayer);
+
+  let lastError: unknown;
+  for (let attempt = 0; attempt < WARMUP_MAX_ATTEMPTS; attempt += 1) {
+    try {
+      await relayer.generateKeypair();
+      await warmContractEncrypt(relayer, target);
+      return;
+    } catch (cause) {
+      lastError = cause;
+      if (isEncryptTimeout(cause) && attempt < WARMUP_MAX_ATTEMPTS - 1) {
+        await sleep(WARMUP_RETRY_DELAY_MS * (attempt + 1));
+        continue;
+      }
+      throw cause;
+    }
+  }
+
+  throw lastError instanceof Error
+    ? lastError
+    : new Error("Could not initialize confidential encryption.");
+}
+
 /**
- * Warms the Zama FHE worker before TokenOps encrypt.
- * ENCRYPT requests time out at 30s; cold WASM init can exceed that unless we
- * pre-initialize with generateKeypair + a throwaway encrypt first.
+ * Local FHE warmup hook — prefer usePrivloFheWarmup from FheWarmupProvider
+ * when inside the /app shell (global background preload).
  */
 export function useFheReady(target?: FheWarmupTarget) {
   const zamaSDK = useZamaSDK();
@@ -121,15 +145,10 @@ export function useFheReady(target?: FheWarmupTarget) {
 
       warmingRef.current = true;
       setInitError(undefined);
-      setPhase(
-        relayer.status === "ready" ? "warming" : "initializing",
-      );
+      setPhase(relayer.status === "ready" ? "warming" : "initializing");
       const started = Date.now();
 
       try {
-        setPhase(
-          relayer.status === "ready" ? "warming" : "initializing",
-        );
         await warmFheEncryption(relayer, target);
         warmedRef.current = true;
         setPhase("ready");
@@ -202,10 +221,10 @@ export function useFheReady(target?: FheWarmupTarget) {
 
 export function fheWarmupMessage(phase: FheWarmupPhase, elapsedSec: number) {
   if (phase === "initializing") {
-    return `Loading privacy engine (step 1 of 2)… ${elapsedSec}s. First visit can take 1–2 minutes — keep this tab open.`;
+    return `Loading secure encryption in the background… ${elapsedSec}s`;
   }
   if (phase === "warming") {
-    return `Warming encryption (step 2 of 2)… ${elapsedSec}s. Do not execute until this finishes.`;
+    return `Almost ready — finishing encryption setup… ${elapsedSec}s`;
   }
   return "";
 }
