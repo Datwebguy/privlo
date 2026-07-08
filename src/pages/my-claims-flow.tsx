@@ -16,7 +16,7 @@ import {
   ShieldCheck,
   Sparkles,
 } from "lucide-react";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { formatUnits, parseAbi } from "viem";
 import {
   useAccount,
@@ -32,6 +32,12 @@ import { confidentialBalanceQueryKey } from "../hooks/use-confidential-balance";
 import { claimsQueryKey, useClaims } from "../hooks/use-claims";
 import { usePrivateClaim } from "../hooks/use-private-claim";
 import {
+  clearClaimImportFromLocation,
+  decodeClaimImport,
+  readClaimImportFromLocation,
+} from "../lib/claim-import";
+import {
+  importClaimForRecipient,
   markClaimClaimed,
   type SignMessageFn,
 } from "../lib/claim-repository";
@@ -54,7 +60,46 @@ export function MyClaimsFlow() {
     },
     [address, walletClient],
   );
+  const queryClient = useQueryClient();
   const claims = useClaims(address, signMessage);
+  const [importNotice, setImportNotice] = useState<string>();
+  const [importError, setImportError] = useState<string>();
+
+  useEffect(() => {
+    const encoded = readClaimImportFromLocation();
+    if (!encoded) return;
+
+    const imported = decodeClaimImport(encoded);
+    clearClaimImportFromLocation();
+
+    if (!imported) {
+      setImportError(
+        "This claim link is invalid or expired. Ask the campaign creator for a fresh link.",
+      );
+      return;
+    }
+
+    if (
+      address &&
+      imported.recipient.toLowerCase() !== address.toLowerCase()
+    ) {
+      setImportError(
+        `This claim link is for ${shortAddress(imported.recipient)}. Connect that recipient wallet to import it.`,
+      );
+      return;
+    }
+
+    importClaimForRecipient(imported);
+    if (address) {
+      void queryClient.invalidateQueries({ queryKey: claimsQueryKey(address) });
+    }
+    setImportNotice(
+      `Imported "${imported.claim.campaignName}". ${address ? "Your claim is ready below." : "Connect the recipient wallet to continue."}`,
+    );
+  }, [address, queryClient]);
+
+  const inbox = claims.data;
+  const pendingClaims = inbox?.claims ?? [];
 
   return (
     <div className="mx-auto max-w-4xl">
@@ -114,24 +159,43 @@ export function MyClaimsFlow() {
           title="Could not load claims"
           copy="Your claims could not be loaded right now. Check your connection, stay on Sepolia, and try Refresh inbox."
           hints={[
-            "If you just received an allocation, wait a moment and refresh.",
+            "If you just received an allocation, open the claim link the creator sent you.",
           ]}
         />
       ) : (
         <>
+          {importNotice && (
+            <div className="mt-6 rounded-xl border border-mint/20 bg-mint/[.05] p-3 text-xs leading-5 text-mint">
+              {importNotice}
+            </div>
+          )}
+          {importError && (
+            <div
+              role="alert"
+              className="mt-6 rounded-xl border border-amber-400/20 bg-amber-400/[.05] p-3 text-xs leading-5 text-amber-100/85"
+            >
+              {importError}
+            </div>
+          )}
+          {inbox?.remoteUnavailable && (
+            <div className="mt-6 rounded-xl border border-amber-400/15 bg-amber-400/[.04] p-3 text-xs leading-5 text-amber-100/80">
+              Remote claim inbox is unavailable. Claims saved on this browser or
+              opened from a creator claim link will still appear here.
+            </div>
+          )}
           <div className="mt-7 flex items-center justify-between">
             <p className="text-sm text-slate-500">
-              {claims.data?.length ?? 0} pending{" "}
-              {claims.data?.length === 1 ? "claim" : "claims"} for{" "}
+              {pendingClaims.length} pending{" "}
+              {pendingClaims.length === 1 ? "claim" : "claims"} for{" "}
               <span className="font-mono text-slate-300">{shortAddress(address)}</span>
             </p>
             <button onClick={() => void claims.refetch()} className="text-xs font-semibold text-mint">
               Refresh inbox
             </button>
           </div>
-          {claims.data?.length ? (
+          {pendingClaims.length ? (
             <div className="mt-3 space-y-4">
-              {claims.data.map((claim) => (
+              {pendingClaims.map((claim) => (
                 <ClaimCard
                   key={claim.id}
                   claim={claim}
@@ -143,10 +207,11 @@ export function MyClaimsFlow() {
           ) : (
             <EmptyClaims
               title="No claims yet"
-              copy="Nothing is waiting for this wallet. Claims show up after a campaign creator adds your address to a confidential airdrop and issues your authorization."
+              copy="Nothing is waiting for this wallet. After a confidential airdrop, the creator shares a private claim link — open it with this recipient wallet to load your authorization."
               hints={[
                 "Use the same recipient wallet the creator added to the campaign.",
-                "New allocations can take a moment to appear — tap Refresh inbox.",
+                "Open the claim link from the creator (not just this page).",
+                "Same-browser testing also works if you created and claimed in one browser.",
               ]}
             />
           )}

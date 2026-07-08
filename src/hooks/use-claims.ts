@@ -8,14 +8,11 @@ export const claimsQueryKey = (recipient?: Address) => [
   recipient?.toLowerCase(),
 ];
 
-const apiConfigured = Boolean(import.meta.env.VITE_PRIVLO_API_URL?.trim());
-
 export function useClaims(recipient?: Address, signMessage?: SignMessageFn) {
   return useQuery({
     queryKey: claimsQueryKey(recipient),
     queryFn: () => getClaims(recipient!, signMessage),
-    enabled:
-      Boolean(recipient) && (!apiConfigured || Boolean(signMessage)),
+    enabled: Boolean(recipient),
     refetchInterval: 30_000,
   });
 }

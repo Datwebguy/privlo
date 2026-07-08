@@ -98,19 +98,39 @@ async function fetchRemoteClaims(
   return parseClaims(payload.claims);
 }
 
+export type ClaimsInboxResult = {
+  claims: ConfidentialClaim[];
+  remoteUnavailable: boolean;
+};
+
 export async function getClaims(
   recipient: Address,
   signMessage?: SignMessageFn,
-): Promise<ConfidentialClaim[]> {
+): Promise<ClaimsInboxResult> {
   const local = readLocalClaims()[recipient.toLowerCase()] ?? [];
   const apiUrl = apiBaseUrl();
-  if (!apiUrl) return local;
-  if (!signMessage) {
-    throw new Error("Wallet signature is required to load remote claim inbox.");
+  if (!apiUrl || !signMessage) {
+    return { claims: local, remoteUnavailable: false };
   }
 
-  const remote = await fetchRemoteClaims(recipient, signMessage);
-  return mergeClaims(remote, local);
+  try {
+    const remote = await fetchRemoteClaims(recipient, signMessage);
+    return { claims: mergeClaims(remote, local), remoteUnavailable: false };
+  } catch {
+    return { claims: local, remoteUnavailable: true };
+  }
+}
+
+export function importClaimForRecipient(params: {
+  recipient: Address;
+  claim: ConfidentialClaim;
+}) {
+  saveLocalClaims([
+    {
+      recipient: params.recipient,
+      claim: params.claim,
+    },
+  ]);
 }
 
 export async function publishClaims(params: {

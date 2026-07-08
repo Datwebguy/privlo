@@ -22,6 +22,7 @@ import {
   ArrowRight,
   Check,
   CheckCircle2,
+  Copy,
   FileSpreadsheet,
   Gift,
   LoaderCircle,
@@ -61,10 +62,12 @@ import { useFheReady } from "../hooks/use-fhe-ready";
 import { formatExecutionError } from "../lib/zama-errors";
 
 import { saveCampaign } from "../lib/campaign-repository";
+import { buildClaimImportUrl } from "../lib/claim-import";
 import {
   publishClaims,
   saveLocalClaims,
 } from "../lib/claim-repository";
+import { shortAddress } from "../lib/utils";
 import {
   MAX_AMOUNT_INPUT_LENGTH,
   MAX_CAMPAIGN_NAME_LENGTH,
@@ -849,6 +852,9 @@ function AirdropExecution({
   const [progress, setProgress] = useState("");
   const [error, setError] = useState<string>();
   const [deliveryWarning, setDeliveryWarning] = useState<string>();
+  const [recipientClaimLinks, setRecipientClaimLinks] = useState<
+    Array<{ recipient: Address; url: string }>
+  >([]);
   const [resultHash, setResultHash] = useState<`0x${string}`>();
   const total = recipients.reduce((sum, recipient) => sum + recipient.amount, 0n);
 
@@ -989,6 +995,13 @@ function AirdropExecution({
         saveLocalClaims([issuedClaim]);
       }
 
+      setRecipientClaimLinks(
+        claims.map(({ recipient, claim }) => ({
+          recipient,
+          url: buildClaimImportUrl(recipient, claim),
+        })),
+      );
+
       setProgress("Delivering encrypted claim authorizations…");
       try {
         if (!wallet.data) {
@@ -1036,6 +1049,7 @@ function AirdropExecution({
       <ExecutionSuccess
         hash={resultHash}
         warning={deliveryWarning}
+        claimLinks={recipientClaimLinks}
         onDone={() => navigate("/app/campaigns")}
       />
     );
@@ -1063,12 +1077,8 @@ function AirdropExecution({
       <StatusRow complete={true} label="Recipient allocations validated" />
       <StatusRow complete={Boolean(operator.data)} label="Airdrop factory authorization" />
       <StatusRow
-        complete={Boolean(import.meta.env.VITE_PRIVLO_API_URL)}
-        label={
-          import.meta.env.VITE_PRIVLO_API_URL
-            ? "Recipients can load claims on any device"
-            : "Claims stay on this browser until delivery is enabled"
-        }
+        complete={true}
+        label="Recipient claim links generated after execution"
       />
       {error && <ErrorNotice message={error} />}
       {progress && <p className="mt-4 text-xs text-mint">{progress}</p>}
@@ -1123,18 +1133,67 @@ function ExecutionNotice({ message }: { message: string }) {
 function ExecutionSuccess({
   hash,
   warning,
+  claimLinks = [],
   onDone,
 }: {
   hash: `0x${string}`;
   warning?: string;
+  claimLinks?: Array<{ recipient: Address; url: string }>;
   onDone: () => void;
 }) {
+  const [copiedRecipient, setCopiedRecipient] = useState<string>();
+
+  async function copyClaimLink(recipient: Address, url: string) {
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopiedRecipient(recipient.toLowerCase());
+      window.setTimeout(() => setCopiedRecipient(undefined), 2000);
+    } catch {
+      window.prompt("Copy this claim link for the recipient:", url);
+    }
+  }
+
   return (
     <ExecutionPanel>
       <div className="py-4 text-center">
         <span className="mx-auto grid size-12 place-items-center rounded-full bg-mint text-[#06241c]"><CheckCircle2 size={23} /></span>
         <h2 className="mt-5 font-display text-2xl font-semibold">Campaign confirmed</h2>
         <p className="mt-2 text-sm text-slate-500">The TokenOps transaction was mined on Sepolia.</p>
+        {claimLinks.length > 0 && (
+          <div className="mx-auto mt-5 max-w-xl rounded-2xl border border-mint/15 bg-mint/[.04] p-4 text-left">
+            <p className="text-sm font-semibold text-slate-200">
+              Send claim links to recipients
+            </p>
+            <p className="mt-2 text-xs leading-5 text-slate-500">
+              Recipients open their link with the matching wallet to load the
+              encrypted authorization, then decrypt and claim on My claims.
+            </p>
+            <ul className="mt-4 space-y-3">
+              {claimLinks.map(({ recipient, url }) => (
+                <li
+                  key={recipient}
+                  className="rounded-xl border border-white/[.07] bg-black/20 p-3"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="font-mono text-xs text-slate-300">
+                      {shortAddress(recipient)}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => void copyClaimLink(recipient, url)}
+                      className="inline-flex items-center gap-1.5 text-xs font-semibold text-mint"
+                    >
+                      <Copy size={13} />
+                      {copiedRecipient === recipient.toLowerCase()
+                        ? "Copied"
+                        : "Copy link"}
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
         {warning && (
           <div className="mx-auto mt-4 max-w-xl rounded-xl border border-amber-400/20 bg-amber-400/[.05] p-3 text-left text-xs leading-5 text-amber-100/80">
             {warning}
